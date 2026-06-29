@@ -1173,6 +1173,9 @@ function recordOwnershipTransfer(
                         <!-- Stake NFT -->
                         <div class="info-card3">
                             <h2>Stake NFT Into Vault</h2>
+                            <div id="timelock-stake-masquerade-warning" style="display:none;margin-bottom:12px;padding:10px 14px;background:#3a0a0a;border:1px solid #e55;border-radius:8px;font-size:0.9em;line-height:1.5;color:#f88">
+                                ⚠️ <strong>Masquerade Mode Active</strong> — You are viewing someone else's vault. Staking will deposit <strong>your NFT</strong> into their vault. You will not be able to recover it unless you also control that wallet.
+                            </div>
                             <p>Approves the vault to receive your NFT, then stakes it through the vault to the LP pool. Rewards accumulate to the vault while locked.</p>
                             <div class="form-group">
                                 <label>Select NFT Position to Stake</label>

@@ -361,20 +361,24 @@ export async function clearMasquerade() {
 function _updateMasqueradeBanner() {
     const banner = document.getElementById('timelock-masquerade-banner');
     const heading = document.getElementById('timelock-vaults-heading');
-    if (!banner) return;
+    const stakeWarning = document.getElementById('timelock-stake-masquerade-warning');
 
     if (masqueradeAddress) {
         const short = `${masqueradeAddress.slice(0, 10)}...${masqueradeAddress.slice(-8)}`;
-        banner.style.display = 'block';
-        banner.innerHTML = `
-            <span style="color:#f0a500;font-weight:700">MASQUERADE ACTIVE</span>
-            — viewing vaults for <span style="color:#fff;font-family:monospace">${short}</span>.
-            Your wallet signs permissionless withdrawal transactions.
-            <button class="btn-secondary" onclick="Timelock.clearMasquerade()" style="margin-left:12px;padding:4px 12px;font-size:0.85em">Exit Masquerade</button>`;
+        if (banner) {
+            banner.style.display = 'block';
+            banner.innerHTML = `
+                <span style="color:#f0a500;font-weight:700">MASQUERADE ACTIVE</span>
+                — viewing vaults for <span style="color:#fff;font-family:monospace">${short}</span>.
+                Your wallet signs permissionless withdrawal transactions.
+                <button class="btn-secondary" onclick="Timelock.clearMasquerade()" style="margin-left:12px;padding:4px 12px;font-size:0.85em">Exit Masquerade</button>`;
+        }
         if (heading) heading.textContent = `Vaults for ${short}`;
+        if (stakeWarning) stakeWarning.style.display = 'block';
     } else {
-        banner.style.display = 'none';
+        if (banner) banner.style.display = 'none';
         if (heading) heading.textContent = 'Your Timelock Vaults';
+        if (stakeWarning) stakeWarning.style.display = 'none';
     }
 }
 
@@ -837,6 +841,17 @@ export async function stakeNFTToVault() {
     if (!selectedVaultAddress) {
         showErrorNotificationCentered('No Vault Selected', 'Please select a vault first.');
         return;
+    }
+
+    if (masqueradeAddress) {
+        const short = `${masqueradeAddress.slice(0, 10)}...${masqueradeAddress.slice(-8)}`;
+        const confirmed = window.confirm(
+            `⚠️ Masquerade Mode Active\n\n` +
+            `You are currently viewing vaults belonging to:\n${short}\n\n` +
+            `Staking an NFT will deposit YOUR NFT into THEIR vault. The NFT and all its contents will be locked under that address until their timelock expires — you will not be able to retrieve it unless you also control that wallet.\n\n` +
+            `Are you sure you want to stake into this vault?`
+        );
+        if (!confirmed) return;
     }
 
     const customStakeId = document.getElementById('timelock-nft-custom-id')?.value?.trim();
