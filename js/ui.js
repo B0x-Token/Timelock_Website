@@ -813,6 +813,15 @@ import { initEthers2, updateGraphData } from "./charts.js";
  * Switches stats sub-navigation tab
  * @param {string} tabName - Stats tab name
  */
+export function switchMinerTab(tabName) {
+    document.querySelectorAll('.miner-tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.miner-mode-tab').forEach(el => el.classList.remove('active'));
+    const content = document.getElementById('miner-tab-' + tabName);
+    const tab = document.querySelector(`.miner-mode-tab[data-miner-tab="${tabName}"]`);
+    if (content) content.classList.add('active');
+    if (tab) tab.classList.add('active');
+}
+
 export async function switchTab2(tabName) {
     updateURL(tabName);
 
@@ -3993,6 +4002,7 @@ export default {
     switchTabForStats,
     showStatsPageDirect,
     switchTab2,
+    switchMinerTab,
     updateURL,
 
     // Wallet UI

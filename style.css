@@ -6290,6 +6290,49 @@ body.stats-active .content {
         box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
     }
 
+    .miner-mode-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 35px;
+        padding: 6px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .miner-mode-tab {
+        flex: 1;
+        background: none;
+        border: none;
+        color: #888;
+        font-size: 26px;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 16px 20px;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        letter-spacing: 0.3px;
+    }
+
+    .miner-mode-tab:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .miner-mode-tab.active {
+        color: #fff;
+        background: linear-gradient(135deg, #2a5298, #667eea);
+        box-shadow: 0 4px 15px rgba(42, 82, 152, 0.4);
+    }
+
+    .miner-tab-content {
+        display: none;
+    }
+
+    .miner-tab-content.active {
+        display: block;
+    }
+
     @keyframes gradientShift {
         0% {
             background-position: 0% 50%;

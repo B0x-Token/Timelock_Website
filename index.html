@@ -2676,199 +2676,425 @@
                         <div id="b0x-main-content">
                             <header id="b0x-header">
                                 <h1 id="b0x-title">🚀 B0x Token Miner Setup</h1>
-                                <p id="b0x-subtitle">Complete guide to get your miner up and running </p>
+                                <p id="b0x-subtitle">Complete guide to get your miner up and running</p>
                             </header>
 
-                            <div class="b0x-section">
-                                <h2 class="b0x-section-title">📋 Prerequisites</h2>
-
-                                <div class="b0x-step">
-                                    <span class="b0x-step-number">1</span>
-                                    <strong>Update Graphics Drivers:</strong> Install the latest NVIDIA graphics drivers
-                                    from the
-                                    <a href="https://www.nvidia.com/drivers" target="_blank"
-                                        class="b0x-external-link">official NVIDIA website</a>
-                                </div>
-
-                                <div class="b0x-step">
-                                    <span class="b0x-step-number">2</span>
-                                    <strong>(Optional Miner Start Script Installs dotnet 6.0 for user automatically) Install .NET 6.0:</strong> Download and install .NET 6.0 Runtime from
-                                    <a href="https://dotnet.microsoft.com/download/dotnet/6.0" target="_blank"
-                                        class="b0x-external-link">Microsoft's official site</a>
-                                </div>
+                            <!-- Miner Mode Navigation Tabs -->
+                            <div class="miner-mode-tabs">
+                                <button class="miner-mode-tab active" data-miner-tab="solo" onclick="switchMinerTab('solo')">⛏️ Solo Mining</button>
+                                <button class="miner-mode-tab" data-miner-tab="pool" onclick="switchMinerTab('pool')">🏊 Pool Mining</button>
+                                <button class="miner-mode-tab" data-miner-tab="fpga" onclick="switchMinerTab('fpga')">⚡ FPGA Mining</button>
                             </div>
 
-                            <div class="b0x-section">
-                                <h2 class="b0x-section-title">⬇️ Download Miner</h2>
-                                <p>Choose your operating system and download the appropriate miner:</p>
+                            <!-- ==================== SOLO MINING TAB ==================== -->
+                            <div id="miner-tab-solo" class="miner-tab-content active">
 
-                                <div class="b0x-download-links">
-                                    <div class="b0x-download-card">
-                                        <h3>🪟 Windows Miner</h3>
-                                        <p>For Windows 10/11 users</p>
-                                        <a href="https://github.com/B0x-Token/B0xToken-Windows-Miner-Mainnet/"
-                                            target="_blank" class="b0x-download-btn">
-                                            Download Windows Miner
-                                        </a>
-                                        <br></br>
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">📋 Prerequisites</h2>
 
-                                    <a   class="b0x-external-link" href="https://youtu.be/tHIzfkRPDXQ?si=9SgiO1l_nsAYFHRr">Example Windows Setup Video Click here</a>
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">1</span>
+                                        <strong>Update Graphics Drivers:</strong> Install the latest NVIDIA graphics drivers
+                                        from the
+                                        <a href="https://www.nvidia.com/drivers" target="_blank"
+                                            class="b0x-external-link">official NVIDIA website</a>
                                     </div>
 
-                                    <div class="b0x-download-card">
-                                        <h3>🐧 Ubuntu Miner</h3>
-                                        <p>For Ubuntu 20+ users</p>
-                                        <a href="https://github.com/B0x-Token/B0xToken-Miner-Mainnet-Ubuntu/"
-                                            target="_blank" class="b0x-download-btn">
-                                            Download Ubuntu Miner
-                                        </a>
-                                        <br></br>
-
-                                    <a   class="b0x-external-link" href="https://youtu.be/0VIh9oY8718?si=Z_kN1oleeu_bayVw">Example Ubuntu Setup Video Click here</a>
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">2</span>
+                                        <strong>(Optional Miner Start Script Installs dotnet 6.0 for user automatically) Install .NET 6.0:</strong> Download and install .NET 6.0 Runtime from
+                                        <a href="https://dotnet.microsoft.com/download/dotnet/6.0" target="_blank"
+                                            class="b0x-external-link">Microsoft's official site</a>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div class="b0x-section">
-                                <h2 class="b0x-section-title">⚙️ Configuration Setup</h2>
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">⬇️ Download Miner</h2>
+                                    <p>Choose your operating system and download the appropriate miner:</p>
 
-                                <div class="b0x-step">
-                                    <span class="b0x-step-number">3</span>
-                                    <strong>Extract Files:</strong> After downloading, extract the .zip file contents to
-                                    your desired location.
-                                </div>
-
-                                <div class="b0x-step">
-                                    <span class="b0x-step-number">4</span>
-                                    <strong>Configure Settings:</strong> Navigate to the B0x Token Miner folder and open
-                                    <code>B0xToken.conf</code> file. Edit the following settings:
-                                </div>
-
-                                <div class="b0x-config-block">
-                                    "minerAddress": "0xF2E00a6DbA02eD1115e5BEf3CcD7B5dD47141dDC",<br></br>
-                                    "privateKey": "0xf7a41INPUTYOURPRIVATEKEYHEREc3e0ac4fd7e83bd900de10190",
-                                </div>
-
-                                <div class="b0x-important-note">
-                                    ⚠️ <strong>Important:</strong> Replace with your Base Blockchain account
-                                    that has Base Ethereum in it. Using this exposed key will result in loss of funds.
-                                    **ESPECIALLY TRUE ON MAINNET, USING the included testnet key will result in loss of funds,
-                                    you must supply your own private key and address for mining!**
-                                </div>
-
-                                <h3 style="color: white; margin-top: 25px;">Optional Configuration Parameters:</h3>
-
-                                <div class="b0x-config-block">
-                                    "mintToAddress": "",</div>
-                                <p><strong>mintToAddress:</strong> Optional. If you want tokens minted to a different
-                                    address. Overpayment ETH will also go to this address.</p>
-
-                                <div class="b0x-config-block">
-                                    "MaxSolvesperMint": 15,<br></br>
-                                    "MinSolvesperMint": 3,</div>
-                                <p><strong>MaxSolvesperMint:</strong> Maximum number of solves before submitting a
-                                    transaction.<br>
-                                    <strong>MinSolvesperMint:</strong> Minimum number of solves before submitting (lower
-                                    is better).
-                                </p>
-
-                                <div class="b0x-config-block">
-                                    "Difficulty_Multiplier": 1,</div>
-                                <p><strong>Difficulty_Multiplier:</strong> Work at higher difficulties for more reward
-                                    per mint. Suggested: 2-5 at start, then 1 after 1000 difficulty.</p>
-
-                                <div class="b0x-config-block">
-                                    "minSecondsPerAnswer": 0,<br></br>
-                                    "maxUSDperToken": -0.10,</div>
-                                <p><strong>maxUSDperToken:</strong> Maximum USD you plan to spend per B0x token
-                                    (negative means it costs money to mint - this is normal).
-                                    -0.10 means 10c per Token is the maximum you want to spend per token in ur mints
-                                </p>
-
-                                <h3 style="color: white; margin-top: 25px;">Network Configuration (Testnet):</h3>
-                                <div class="b0x-config-block">
-                                    "web3api": "https://base.llamarpc.com",<br></br>
-                                    "contractAddress": "0x97bBa9F710DE42536843Bd1061514b5104D7DE50",<br></br>
-                                    "chainID": 8453,</div>
-                            </div>
-
-                            <div class="b0x-section">
-                                <h2 class="b0x-section-title">💰 Get Base Ethereum & Bridgeing to Base</h2>
-
-                                <div class="b0x-step">
-                                    <span class="b0x-step-number">5</span>
-                                    <strong>Get Base Ethereum:</strong> First, get Base Ethereum frome bridge
-                                </div>
-
-                                <div class="b0x-bridge-links">
-                                    <a href="https://jumper.exchange/?fromChain=8453&toChain=8453&toToken=0x0000000000000000000000000000000000000000"
-                                        target="_blank" class="b0x-bridge-btn">
-                                        🚰 Get Base Ethereum from the Bridge
-                                    </a>
-                                </div>      <div class="b0x-bridge-links">
-                                    <a href="https://superbridge.app/?fromChainId=1&toChainId=8453"
-                                        target="_blank" class="b0x-bridge-btn">
-                                        🚰 Get Base Ethereum from the SuperBridge Bridge
-                                    </a>
-                                </div>
-                                <div class="b0x-important-note">
-                                    ⏱️ <strong>Minmum Price:</strong> The Minmum Price of 1 B0x is 0.0000005 Ethereum or ~0.0025$ USD.  If you expect to mint 10,000 Tokens expect it to cost at least 25$. (10000*0.0025)
-                                  <br>  This is a constant forever.
-                                </div>
-                            </div>
-
-                            <div class="b0x-section">
-                                <h2 class="b0x-section-title">🚀 Start Mining</h2>
-
-                                <div class="b0x-platform-instructions">
-                                    <div class="b0x-platform-card">
-                                        <div class="b0x-platform-title">
-                                            <div class="b0x-platform-icon">W</div>
-                                            Windows Instructions
+                                    <div class="b0x-download-links">
+                                        <div class="b0x-download-card">
+                                            <h3>🪟 Windows Miner</h3>
+                                            <p>For Windows 10/11 users</p>
+                                            <a href="https://github.com/B0x-Token/B0xToken-Windows-Miner-Mainnet/releases/"
+                                                target="_blank" class="b0x-download-btn">
+                                                Download Windows Miner
+                                            </a>
+                                            <br></br>
+                                            <a class="b0x-external-link" href="https://youtu.be/tHIzfkRPDXQ?si=9SgiO1l_nsAYFHRr">Example Windows Setup Video Click here</a>
                                         </div>
-                                        <ol>
-                                            <li>Double-click <strong>AStartMiner.bat</strong></li>
-                                            <li>The system will verify all components are installed correctly</li>
-                                            <li>The miner should start automatically!</li>
-                                            <li>Check the logs for easy monitoring</li>
-                                        </ol>
-                                    </div>
 
-                                    <div class="b0x-platform-card">
-                                        <div class="b0x-platform-title">
-                                            <div class="b0x-platform-icon">U</div>
-                                            Ubuntu Instructions
+                                        <div class="b0x-download-card">
+                                            <h3>🐧 Ubuntu Miner</h3>
+                                            <p>For Ubuntu 20+ users</p>
+                                            <a href="https://github.com/B0x-Token/B0xToken-Miner-Mainnet-Ubuntu/releases/"
+                                                target="_blank" class="b0x-download-btn">
+                                                Download Ubuntu Miner
+                                            </a>
+                                            <br></br>
+                                            <a class="b0x-external-link" href="https://youtu.be/0VIh9oY8718?si=Z_kN1oleeu_bayVw">Example Ubuntu Setup Video Click here</a>
                                         </div>
-                                        <ol>
-                                            <li>Right-click on <strong>1RunThisToMineB0xToken.sh</strong></li>
-                                            <li>Select "Properties" → "Permissions"</li>
-                                            <li>Enable "Allow executing file as program"</li>
-                                            <li>Double-click the file and select "Run in terminal"</li>
-                                        </ol>
-                                        <p><strong>Alternative:</strong> Open terminal in the directory and run:<br>
-                                            <code>./1RunThisToMineB0xToken.sh</code>
-                                        </p>
                                     </div>
                                 </div>
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">⚙️ Configuration Setup</h2>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">3</span>
+                                        <strong>Extract Files:</strong> After downloading, extract the .zip file contents to
+                                        your desired location.
+                                    </div>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">4</span>
+                                        <strong>Configure Settings:</strong> Navigate to the B0x Token Miner folder and open
+                                        <code>B0xToken.conf</code> file. Edit the following settings:
+                                    </div>
+
+                                    <div class="b0x-config-block">
+                                        "minerAddress": "0xF2E00a6DbA02eD1115e5BEf3CcD7B5dD47141dDC",<br></br>
+                                        "privateKey": "0xf7a41INPUTYOURPRIVATEKEYHEREc3e0ac4fd7e83bd900de10190",
+                                    </div>
+
+                                    <div class="b0x-important-note">
+                                        ⚠️ <strong>Important:</strong> Replace with your Base Blockchain account
+                                        that has Base Ethereum in it. Using this exposed key will result in loss of funds.
+                                        **ESPECIALLY TRUE ON MAINNET, USING the included testnet key will result in loss of funds,
+                                        you must supply your own private key and address for mining!**
+                                    </div>
+
+                                    <h3 style="color: white; margin-top: 25px;">Optional Configuration Parameters:</h3>
+
+                                    <div class="b0x-config-block">
+                                        "mintToAddress": "",</div>
+                                    <p><strong>mintToAddress:</strong> Optional. If you want tokens minted to a different
+                                        address. Overpayment ETH will also go to this address.</p>
+
+                                    <div class="b0x-config-block">
+                                        "MaxSolvesperMint": 15,<br></br>
+                                        "MinSolvesperMint": 3,</div>
+                                    <p><strong>MaxSolvesperMint:</strong> Maximum number of solves before submitting a
+                                        transaction.<br>
+                                        <strong>MinSolvesperMint:</strong> Minimum number of solves before submitting (lower
+                                        is better).
+                                    </p>
+
+                                    <div class="b0x-config-block">
+                                        "Difficulty_Multiplier": 1,</div>
+                                    <p><strong>Difficulty_Multiplier:</strong> Work at higher difficulties for more reward
+                                        per mint. Suggested: 2-5 at start, then 1 after 1000 difficulty.</p>
+
+                                    <div class="b0x-config-block">
+                                        "minSecondsPerAnswer": 0,<br></br>
+                                        "maxUSDperToken": -0.10,</div>
+                                    <p><strong>maxUSDperToken:</strong> Maximum USD you plan to spend per B0x token
+                                        (negative means it costs money to mint - this is normal).
+                                        -0.10 means 10c per Token is the maximum you want to spend per token in ur mints
+                                    </p>
+
+                                    <h3 style="color: white; margin-top: 25px;">Network Configuration:</h3>
+                                    <div class="b0x-config-block">
+                                        "web3api": "https://base.llamarpc.com",<br></br>
+                                        "contractAddress": "0x97bBa9F710DE42536843Bd1061514b5104D7DE50",<br></br>
+                                        "chainID": 8453,</div>
+                                </div>
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">💰 Get Base Ethereum & Bridging to Base</h2>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">5</span>
+                                        <strong>Get Base Ethereum:</strong> First, get Base Ethereum from bridge
+                                    </div>
+
+                                    <div class="b0x-bridge-links">
+                                        <a href="https://jumper.exchange/?fromChain=8453&toChain=8453&toToken=0x0000000000000000000000000000000000000000"
+                                            target="_blank" class="b0x-bridge-btn">
+                                            🚰 Get Base Ethereum from the Bridge
+                                        </a>
+                                    </div>
+                                    <div class="b0x-bridge-links">
+                                        <a href="https://superbridge.app/?fromChainId=1&toChainId=8453"
+                                            target="_blank" class="b0x-bridge-btn">
+                                            🚰 Get Base Ethereum from the SuperBridge Bridge
+                                        </a>
+                                    </div>
+                                    <div class="b0x-important-note">
+                                        ⏱️ <strong>Minimum Price:</strong> The Minimum Price of 1 B0x is 0.0000005 Ethereum or ~0.0025$ USD. If you expect to mint 10,000 Tokens expect it to cost at least 25$. (10000*0.0025)
+                                        <br>This is a constant forever.
+                                    </div>
+                                </div>
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">🚀 Start Mining</h2>
+
+                                    <div class="b0x-platform-instructions">
+                                        <div class="b0x-platform-card">
+                                            <div class="b0x-platform-title">
+                                                <div class="b0x-platform-icon">W</div>
+                                                Windows Instructions
+                                            </div>
+                                            <ol>
+                                                <li>Double-click <strong>AStartMiner.bat</strong></li>
+                                                <li>The system will verify all components are installed correctly</li>
+                                                <li>The miner should start automatically!</li>
+                                                <li>Check the logs for easy monitoring</li>
+                                            </ol>
+                                        </div>
+
+                                        <div class="b0x-platform-card">
+                                            <div class="b0x-platform-title">
+                                                <div class="b0x-platform-icon">U</div>
+                                                Ubuntu Instructions
+                                            </div>
+                                            <ol>
+                                                <li>Right-click on <strong>1RunThisToMineB0xToken.sh</strong></li>
+                                                <li>Select "Properties" → "Permissions"</li>
+                                                <li>Enable "Allow executing file as program"</li>
+                                                <li>Double-click the file and select "Run in terminal"</li>
+                                            </ol>
+                                            <p><strong>Alternative:</strong> Open terminal in the directory and run:<br>
+                                                <code>./1RunThisToMineB0xToken.sh</code>
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="b0x-final-section">
+                                    <h2>🎉 Congratulations!</h2>
+                                    <p style="font-size: 1.2em; margin-bottom: 0;">You're now mining B0x Tokens!</p>
+                                    <p>Monitor the logs to track your mining progress and earnings.</p>
+                                    <button class="mining-stats-button" onclick="switchTab('stats')">GO View Mining Statistics</button>
+                                </div>
+
                             </div>
+                            <!-- END SOLO MINING TAB -->
 
-                            <div class="b0x-final-section">
-                                <h2>🎉 Congratulations!</h2>
-                                <p style="font-size: 1.2em; margin-bottom: 0;">You're now mining B0x Tokens!</p>
-                                <p>Monitor the logs to track your mining progress and earnings.</p>
-                                <button class="mining-stats-button" onclick="switchTab('stats')">GO View Mining
-                                    Statistics</button>
+                            <!-- ==================== POOL MINING TAB ==================== -->
+                            <div id="miner-tab-pool" class="miner-tab-content">
 
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">📋 Prerequisites</h2>
 
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">1</span>
+                                        <strong>Update Graphics Drivers:</strong> Install the latest NVIDIA graphics drivers
+                                        from the
+                                        <a href="https://www.nvidia.com/drivers" target="_blank"
+                                            class="b0x-external-link">official NVIDIA website</a>
+                                    </div>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">2</span>
+                                        <strong>(Optional Miner Start Script Installs dotnet 6.0 for user automatically) Install .NET 6.0:</strong> Download and install .NET 6.0 Runtime from
+                                        <a href="https://dotnet.microsoft.com/download/dotnet/6.0" target="_blank"
+                                            class="b0x-external-link">Microsoft's official site</a>
+                                    </div>
+                                </div>
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">⬇️ Download Miner</h2>
+                                    <p>Choose your operating system and download the appropriate miner:</p>
+
+                                    <div class="b0x-download-links">
+                                        <div class="b0x-download-card">
+                                            <h3>🪟 Windows Miner</h3>
+                                            <p>For Windows 10/11 users</p>
+                                            <a href="https://github.com/B0x-Token/B0xToken-Windows-Miner-Mainnet/releases/"
+                                                target="_blank" class="b0x-download-btn">
+                                                Download Windows Miner
+                                            </a>
+                                            <br></br>
+                                            <a class="b0x-external-link" href="https://youtu.be/tHIzfkRPDXQ?si=9SgiO1l_nsAYFHRr">Example Windows Setup Video Click here</a>
+                                        </div>
+
+                                        <div class="b0x-download-card">
+                                            <h3>🐧 Ubuntu Miner</h3>
+                                            <p>For Ubuntu 20+ users</p>
+                                            <a href="https://github.com/B0x-Token/B0xToken-Miner-Mainnet-Ubuntu/releases/"
+                                                target="_blank" class="b0x-download-btn">
+                                                Download Ubuntu Miner
+                                            </a>
+                                            <br></br>
+                                            <a class="b0x-external-link" href="https://youtu.be/0VIh9oY8718?si=Z_kN1oleeu_bayVw">Example Ubuntu Setup Video Click here</a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">⚙️ Configuration Setup</h2>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">3</span>
+                                        <strong>Extract Files:</strong> After downloading, extract the .zip file contents to
+                                        your desired location.
+                                    </div>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">4</span>
+                                        <strong>Configure Settings:</strong> Navigate to the B0x Token Miner folder and open
+                                        <code>B0xToken.conf</code> file. Edit the following settings:
+                                    </div>
+
+                                    <div class="b0x-config-block">
+                                        "minerAddress": "0xF2E00a6DbA02eD1115e5BEf3CcD7B5dD47141dDC",<br></br>
+                                        "primaryPool": "https://pool.bzerox.org:8185/",
+                                    </div>
+
+                                    <div class="b0x-important-note">
+                                        ✅ <strong>Note:</strong> No private key is required for pool mining — just your public wallet address!
+                                    </div>
+
+                                    <h3 style="color: white; margin-top: 25px;">Network Configuration:</h3>
+                                    <div class="b0x-config-block">
+                                        "web3api": "https://base.llamarpc.com/",<br></br>
+                                        "contractAddress": "0x97bBa9F710DE42536843Bd1061514b5104D7DE50",<br></br>
+                                        "chainID": 8453,
+                                    </div>
+
+                                    <div class="b0x-important-note">
+                                        💡 <strong>Note:</strong> No ETH is required in the account to mine B Zero X. However, to transfer B Zero X, trade, and stake — Ethereum on Base is required to pay the transaction fee.
+                                    </div>
+                                </div>
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">💰 Get Base Ethereum & Bridging to Base</h2>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">5</span>
+                                        <strong>Get Base Ethereum:</strong> First, get Base Ethereum from bridge
+                                    </div>
+
+                                    <div class="b0x-bridge-links">
+                                        <a href="https://jumper.exchange/?fromChain=8453&toChain=8453&toToken=0x0000000000000000000000000000000000000000"
+                                            target="_blank" class="b0x-bridge-btn">
+                                            🚰 Get Base Ethereum from the Bridge
+                                        </a>
+                                    </div>
+                                    <div class="b0x-bridge-links">
+                                        <a href="https://superbridge.app/?fromChainId=1&toChainId=8453"
+                                            target="_blank" class="b0x-bridge-btn">
+                                            🚰 Get Base Ethereum from the SuperBridge Bridge
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">🚀 Start Mining</h2>
+
+                                    <div class="b0x-platform-instructions">
+                                        <div class="b0x-platform-card">
+                                            <div class="b0x-platform-title">
+                                                <div class="b0x-platform-icon">W</div>
+                                                Windows Instructions
+                                            </div>
+                                            <ol>
+                                                <li>Double-click <strong>AStartMiner.bat</strong></li>
+                                                <li>The system will verify all components are installed correctly</li>
+                                                <li>The miner should start automatically!</li>
+                                                <li>Check the logs for easy monitoring</li>
+                                            </ol>
+                                        </div>
+
+                                        <div class="b0x-platform-card">
+                                            <div class="b0x-platform-title">
+                                                <div class="b0x-platform-icon">U</div>
+                                                Ubuntu Instructions
+                                            </div>
+                                            <ol>
+                                                <li>Right-click on <strong>1RunThisToMineB0xToken.sh</strong></li>
+                                                <li>Select "Properties" → "Permissions"</li>
+                                                <li>Enable "Allow executing file as program"</li>
+                                                <li>Double-click the file and select "Run in terminal"</li>
+                                            </ol>
+                                            <p><strong>Alternative:</strong> Open terminal in the directory and run:<br>
+                                                <code>./1RunThisToMineB0xToken.sh</code>
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="b0x-final-section">
+                                    <h2>🎉 Congratulations!</h2>
+                                    <p style="font-size: 1.2em; margin-bottom: 0;">You're now pool mining B0x Tokens!</p>
+                                    <p>Monitor the logs to track your mining progress and earnings.</p>
+                                    <button class="mining-stats-button" onclick="switchTab('stats')">GO View Mining Statistics</button>
+                                </div>
 
                             </div>
+                            <!-- END POOL MINING TAB -->
+
+                            <!-- ==================== FPGA MINING TAB ==================== -->
+                            <div id="miner-tab-fpga" class="miner-tab-content">
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">⚡ FPGA Mining Configuration</h2>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">1</span>
+                                        <strong>Set Your Pool URL:</strong> Configure your FPGA miner to connect to the B0x pool.
+                                    </div>
+
+                                    <div class="b0x-config-block">
+                                        Pool URL: https://pool.bzerox.org:8185/
+                                    </div>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">2</span>
+                                        <strong>Set Your Miner Address:</strong> Use an Ethereum address that you control the private key of — this is where your mined tokens will be sent.
+                                    </div>
+
+                                    <div class="b0x-config-block">
+                                        Miner Address Example: 0xF2E00a6DbA02eD1115e5BEf3CcD7B5dD47141dDC
+                                    </div>
+
+                                    <div class="b0x-important-note">
+                                        ⚠️ <strong>Important:</strong> Set your miner address to an Ethereum address that you have control of the private key of, in order to control the tokens sent to it.
+                                    </div>
+                                </div>
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">🪙 Token</h2>
+                                    <div class="b0x-config-block">
+                                        Token: 0xBTC, 0xBitcoin
+                                    </div>
+                                </div>
+
+                                <div class="b0x-section">
+                                    <h2 class="b0x-section-title">💰 Get Base Ethereum & Bridging to Base</h2>
+
+                                    <div class="b0x-step">
+                                        <span class="b0x-step-number">3</span>
+                                        <strong>Get Base Ethereum:</strong> First, get Base Ethereum from bridge to pay for transaction fees.
+                                    </div>
+
+                                    <div class="b0x-bridge-links">
+                                        <a href="https://jumper.exchange/?fromChain=8453&toChain=8453&toToken=0x0000000000000000000000000000000000000000"
+                                            target="_blank" class="b0x-bridge-btn">
+                                            🚰 Get Base Ethereum from the Bridge
+                                        </a>
+                                    </div>
+                                    <div class="b0x-bridge-links">
+                                        <a href="https://superbridge.app/?fromChainId=1&toChainId=8453"
+                                            target="_blank" class="b0x-bridge-btn">
+                                            🚰 Get Base Ethereum from the SuperBridge Bridge
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <div class="b0x-final-section">
+                                    <h2>🎉 Congratulations!</h2>
+                                    <p style="font-size: 1.2em; margin-bottom: 0;">You're now FPGA mining B0x Tokens!</p>
+                                    <p>Monitor the logs to track your mining progress and earnings.</p>
+                                    <button class="mining-stats-button" onclick="switchTab('stats')">GO View Mining Statistics</button>
+                                </div>
+
+                            </div>
+                            <!-- END FPGA MINING TAB -->
 
                         </div>
                     </div>
-
-
-
-
                 </div>
                 <!-- ADMIN FUNCTION DAPP PAGE -->
                 <div id="admin-functions" class="page">

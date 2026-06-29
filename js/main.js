@@ -207,6 +207,7 @@ window.showLoadingScreen = UI.showLoadingScreen;
 window.switchTab = UI.switchTab;
 window.switchTab2 = UI.switchTab2;
 window.switchTabForStats = UI.switchTabForStats;
+window.switchMinerTab = UI.switchMinerTab;
 
 // Wallet UI
 window.displayWalletBalances = UI.displayWalletBalances;
