@@ -794,6 +794,9 @@
                         <div id="timelock-masquerade-banner" style="display:none;margin-bottom:12px;padding:10px 14px;background:#2a200a;border:1px solid #f0a500;border-radius:8px;font-size:0.9em;line-height:1.5"></div>
                         <h2 id="timelock-vaults-heading">Your Timelock Vaults</h2>
                         <button class="btn-primary" onclick="Timelock.loadUserVaults()" style="margin-bottom:12px">Refresh Vaults</button>
+                        <div id="timelock-vault-search-wrap" style="display:none;margin-bottom:12px">
+                            <input type="text" id="timelock-vault-search-input" placeholder="Search by vault address or staked NFT #..." oninput="Timelock.filterVaults(this.value)" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;box-sizing:border-box">
+                        </div>
                         <div id="timelock-vaults-container">
                             <p style="color:#aaa">Connect wallet to see your vaults.</p>
                         </div>

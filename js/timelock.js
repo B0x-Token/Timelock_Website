@@ -41,8 +41,11 @@ import { positionData, stakingPositionData } from './positions.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD";
-//old 0x758927C0d2a325656f4c485f590603495cDe5c33
+export const TIMELOCK_FACTORY_ADDRESS = "0x75a1c3e0Fc19Ca340441c52eaA3a503cdE5efbCd";
+//old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
+0x75a1c3e0Fc19Ca340441c52eaA3a503cdE5efbCd
+// Must match the factory's MAX_PAGE_SIZE constant.
+const VAULT_PAGE_SIZE = 100;
 // ============================================
 // ABIs
 // ============================================
@@ -56,9 +59,20 @@ const TIMELOCK_FACTORY_ABI = [
         "type": "function"
     },
     {
-        "inputs": [{ "internalType": "address", "name": "user", "type": "address" }],
+        "inputs": [
+            { "internalType": "address", "name": "user", "type": "address" },
+            { "internalType": "uint256", "name": "start", "type": "uint256" },
+            { "internalType": "uint256", "name": "count", "type": "uint256" }
+        ],
         "name": "getVaults",
-        "outputs": [{ "internalType": "address[]", "name": "", "type": "address[]" }],
+        "outputs": [{ "internalType": "address[]", "name": "result", "type": "address[]" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "address", "name": "user", "type": "address" }],
+        "name": "getVaultCount",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
         "stateMutability": "view",
         "type": "function"
     },
@@ -202,6 +216,32 @@ const TIMELOCK_VAULT_ABI = [
     }
 ];
 
+// Multicall3 aggregate3 — batches per-vault view calls into one RPC round trip.
+const MULTICALL3_ABI = [{
+    "inputs": [{
+        "components": [
+            { "internalType": "address", "name": "target", "type": "address" },
+            { "internalType": "bool", "name": "allowFailure", "type": "bool" },
+            { "internalType": "bytes", "name": "callData", "type": "bytes" }
+        ],
+        "internalType": "struct Multicall3.Call3[]",
+        "name": "calls",
+        "type": "tuple[]"
+    }],
+    "name": "aggregate3",
+    "outputs": [{
+        "components": [
+            { "internalType": "bool", "name": "success", "type": "bool" },
+            { "internalType": "bytes", "name": "returnData", "type": "bytes" }
+        ],
+        "internalType": "struct Multicall3.Result[]",
+        "name": "returnData",
+        "type": "tuple[]"
+    }],
+    "stateMutability": "view",
+    "type": "function"
+}];
+
 const NFT_APPROVE_ABI = [
     {
         "inputs": [
@@ -222,6 +262,17 @@ const NFT_APPROVE_ABI = [
 let selectedVaultAddress = null;
 let userVaults = []; // array of { address, unlockTime, isLocked, stakedTokenIds }
 let masqueradeAddress = null; // when set, vaults are loaded for this address instead of window.userAddress
+let vaultSearchQuery = ''; // current text in the vault search box, used to filter rendered vault cards
+let singleVaultView = false; // true when userVaults holds a single direct-address search result, not the bulk list
+
+// Bumped every time a new vault load/search starts. In-flight loadUserVaults
+// pagination checks this after each await and bails out silently if it no
+// longer matches — that's how a direct-address search interrupts a bulk load
+// already in progress instead of racing it.
+let loadGeneration = 0;
+
+// Below this many vaults, the search box is hidden — not needed for a short list.
+const VAULT_SEARCH_THRESHOLD = 0;
 
 // ============================================
 // CUSTOM ERROR DECODING
@@ -438,13 +489,25 @@ export function renderAllowedNFTs() {
 // ============================================
 // VAULT LOADING
 // ============================================
-
+var first11111 = 0;
 /**
  * Loads all TimeLockVaults for the connected user (or masquerade address) and renders them.
  */
 export async function loadUserVaults() {
     const container = document.getElementById('timelock-vaults-container');
     if (!container) return;
+
+    if(first11111 == 0){
+
+        renderVaultCards(container);
+        first11111 = 1;
+        
+    }
+    const myGeneration = ++loadGeneration;
+    singleVaultView = false;
+    vaultSearchQuery = '';
+    const searchInput = document.getElementById('timelock-vault-search-input');
+    if (searchInput) searchInput.value = '';
 
     const targetAddress = masqueradeAddress || window.userAddress;
 
@@ -466,9 +529,41 @@ export async function loadUserVaults() {
         const provider = window.provider || new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
         const factoryContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, provider);
 
-        const vaultAddresses = await factoryContract.getVaults(targetAddress);
+        const vaultCount = (await factoryContract.getVaultCount(targetAddress)).toNumber();
+        if (myGeneration !== loadGeneration) return; // a direct-address search superseded this load
 
-        if (!vaultAddresses || vaultAddresses.length === 0) {
+        const vaultAddresses = [];
+        var MAX_ATTEMPTS = 20;
+        for (let start = 0; start < vaultCount; start += VAULT_PAGE_SIZE) {
+            if (myGeneration !== loadGeneration) return;
+
+               let attempt = 0;
+                let page;
+
+                while (true) {
+                    await sleep(600);
+                    if (myGeneration !== loadGeneration) return;
+                    try {
+                        page = await factoryContract.getVaults(targetAddress, start, VAULT_PAGE_SIZE);
+                        break; // success — exit retry loop, keep `start` moving via outer for-loop
+                    } catch (err) {
+                        console.log("ERROR IN LOOP FOR GETVAULTS", err);
+                        attempt++;
+                        if (attempt >= MAX_ATTEMPTS) {
+                            throw new Error(`getVaults failed at start=${start} after ${attempt} attempts: ${err.message}`);
+                        }
+                        await sleep(600 * attempt); // backoff
+                        if (myGeneration !== loadGeneration) return;
+                    }
+                }
+
+            if (myGeneration !== loadGeneration) return;
+            vaultAddresses.push(...page);
+        }
+
+        if (myGeneration !== loadGeneration) return;
+
+        if (vaultAddresses.length === 0) {
             const who = masqueradeAddress
                 ? `${masqueradeAddress.slice(0, 8)}...${masqueradeAddress.slice(-6)}`
                 : 'You';
@@ -477,45 +572,207 @@ export async function loadUserVaults() {
             return;
         }
 
-        userVaults = [];
-        for (const addr of vaultAddresses) {
-            try {
-                const vaultContract = new ethers.Contract(addr, TIMELOCK_VAULT_ABI, provider);
-                const [unlockTime, locked, secsLeft, nftIds] = await Promise.all([
-                    vaultContract.unlockTime(),
-                    vaultContract.isLocked(),
-                    vaultContract.secondsUntilUnlock(),
-                    vaultContract.getStakedTokenIds()
-                ]);
-                userVaults.push({
+        const vaultInterface = new ethers.utils.Interface(TIMELOCK_VAULT_ABI);
+        const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, provider);
+        const DETAIL_CALLS_PER_VAULT = 4; // unlockTime, isLocked, secondsUntilUnlock, getStakedTokenIds
+
+        const loadedVaults = [];
+        // Batch in the same page size as the address pagination above, so a
+        // spam-inflated vault count still can't force one unbounded multicall.
+        for (let batchStart = 0; batchStart < vaultAddresses.length; batchStart += VAULT_PAGE_SIZE) {
+            if (myGeneration !== loadGeneration) return;
+
+            const batchAddrs = vaultAddresses.slice(batchStart, batchStart + VAULT_PAGE_SIZE);
+            const calls = [];
+            for (const addr of batchAddrs) {
+                calls.push(
+                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('unlockTime') },
+                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('isLocked') },
+                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('secondsUntilUnlock') },
+                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('getStakedTokenIds') }
+                );
+            }
+
+            let results = null;
+            const MULTICALL_MAX_ATTEMPTS = 15;
+            const MULTICALL_MAX_BACKOFF_MS = 20000; // cap so 15 retries doesn't balloon into a multi-hour wait
+            for (let attempt = 0; attempt < MULTICALL_MAX_ATTEMPTS; attempt++) {
+                await sleep(Math.min(600 * Math.pow(2, attempt), MULTICALL_MAX_BACKOFF_MS));
+                if (myGeneration !== loadGeneration) return;
+                try {
+                    results = await multicallContract.aggregate3(calls);
+                    break;
+                } catch (e) {
+                    console.warn(`Multicall failed for vaults [${batchStart}, ${batchStart + batchAddrs.length}) attempt ${attempt + 1}/${MULTICALL_MAX_ATTEMPTS}:`, e);
+                }
+            }
+            if (myGeneration !== loadGeneration) return;
+            if (!results) {
+                console.warn(`Multicall gave up for vaults [${batchStart}, ${batchStart + batchAddrs.length}) after ${MULTICALL_MAX_ATTEMPTS} attempts`);
+                results = calls.map(() => ({ success: false, returnData: '0x' }));
+            }
+
+            for (let i = 0; i < batchAddrs.length; i++) {
+                const addr = batchAddrs[i];
+                const [unlockTimeRes, lockedRes, secsLeftRes, nftIdsRes] = results.slice(
+                    i * DETAIL_CALLS_PER_VAULT, i * DETAIL_CALLS_PER_VAULT + DETAIL_CALLS_PER_VAULT
+                );
+
+                if (!unlockTimeRes.success || !lockedRes.success || !secsLeftRes.success || !nftIdsRes.success) {
+                    console.warn(`Failed to load vault ${addr} via multicall`);
+                    loadedVaults.push({ address: addr, unlockTime: '0', isLocked: false, secondsLeft: 0, stakedTokenIds: [] });
+                    continue;
+                }
+
+                const [unlockTime] = vaultInterface.decodeFunctionResult('unlockTime', unlockTimeRes.returnData);
+                const [locked] = vaultInterface.decodeFunctionResult('isLocked', lockedRes.returnData);
+                const [secsLeft] = vaultInterface.decodeFunctionResult('secondsUntilUnlock', secsLeftRes.returnData);
+                const [nftIds] = vaultInterface.decodeFunctionResult('getStakedTokenIds', nftIdsRes.returnData);
+
+                loadedVaults.push({
                     address: addr,
                     unlockTime: unlockTime.toString(),
                     isLocked: locked,
                     secondsLeft: secsLeft.toNumber(),
                     stakedTokenIds: nftIds.map(id => id.toString())
                 });
-            } catch (e) {
-                console.warn(`Failed to load vault ${addr}:`, e);
-                userVaults.push({ address: addr, unlockTime: '0', isLocked: false, secondsLeft: 0, stakedTokenIds: [] });
             }
         }
 
+        if (myGeneration !== loadGeneration) return;
+        userVaults = loadedVaults;
         renderVaultCards(container);
     } catch (err) {
+        if (myGeneration !== loadGeneration) return;
         console.error("Error loading vaults:", err);
         container.innerHTML = `<p style="color:#e55">Error loading vaults: ${err.message}</p>`;
     }
 }
 
+/**
+ * Bypasses the bulk paginated load and jumps straight to a single vault
+ * address entered in the search box. Cancels any in-flight loadUserVaults
+ * pagination (via loadGeneration) so the two never race for the container.
+ */
+async function searchVaultByAddress(vaultAddress) {
+    const container = document.getElementById('timelock-vaults-container');
+    if (!container) return;
+
+    const myGeneration = ++loadGeneration;
+    singleVaultView = false;
+
+    const targetAddress = masqueradeAddress || window.userAddress;
+    const who = masqueradeAddress ? 'your masquerade address' : 'You';
+
+    if (!targetAddress) {
+        container.innerHTML = '<p style="color:#aaa">Connect wallet to see your vaults.</p>';
+        return;
+    }
+
+    if (!isFactoryDeployed()) {
+        container.innerHTML = '<p style="color:#f0a500">TimeLock Factory contract not yet deployed. Update TIMELOCK_FACTORY_ADDRESS in timelock.js.</p>';
+        return;
+    }
+
+    container.innerHTML = '<p style="color:#aaa">Checking vault...</p>';
+
+    try {
+        const provider = window.provider || new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
+        const vaultContract = new ethers.Contract(vaultAddress, TIMELOCK_VAULT_ABI, provider);
+
+        let owner;
+        try {
+            owner = await vaultContract.owner();
+        } catch (e) {
+            if (myGeneration !== loadGeneration) return;
+            container.innerHTML = `<p style="color:#e55">${vaultAddress} is not a valid TimeLock vault.</p>`;
+            return;
+        }
+        if (myGeneration !== loadGeneration) return;
+
+        if (owner.toLowerCase() !== targetAddress.toLowerCase()) {
+            container.innerHTML = `<p style="color:#e55">This vault does not belong to ${who}.</p>`;
+            return;
+        }
+
+        const [unlockTime, locked, secsLeft, nftIds] = await Promise.all([
+            vaultContract.unlockTime(),
+            vaultContract.isLocked(),
+            vaultContract.secondsUntilUnlock(),
+            vaultContract.getStakedTokenIds()
+        ]);
+        if (myGeneration !== loadGeneration) return;
+
+        userVaults = [{
+            address: vaultAddress,
+            unlockTime: unlockTime.toString(),
+            isLocked: locked,
+            secondsLeft: secsLeft.toNumber(),
+            stakedTokenIds: nftIds.map(id => id.toString())
+        }];
+        singleVaultView = true;
+        renderVaultCards(container);
+    } catch (err) {
+        if (myGeneration !== loadGeneration) return;
+        console.error("Error searching for vault:", err);
+        container.innerHTML = `<p style="color:#e55">Error looking up vault: ${err.message}</p>`;
+    }
+}
+
+/**
+ * Called from the search box's oninput handler. Re-renders the vault list
+ * filtered to addresses/staked NFT ids matching `query`.
+ */
+export function filterVaults(query) {
+    const trimmed = (query || '').trim();
+
+    if (ethers.utils.isAddress(trimmed)) {
+        // Full address entered — jump straight to that vault instead of
+        // waiting on (or racing) the paginated bulk load.
+        searchVaultByAddress(trimmed);
+        return;
+    }
+
+    if (singleVaultView && trimmed === '') {
+        // Box cleared after a direct-address search — restore the full list.
+        loadUserVaults();
+        return;
+    }
+
+    vaultSearchQuery = trimmed.toLowerCase();
+    const container = document.getElementById('timelock-vaults-container');
+    renderVaultCards(container);
+}
+
 function renderVaultCards(container) {
     if (!container) return;
+
+    const searchWrap = document.getElementById('timelock-vault-search-wrap');
+    if (searchWrap) {
+        // Keep the box visible in single-vault view even though the list is
+        // down to 1 entry — otherwise there'd be no way to clear the search
+        // and get back to the full list.
+        searchWrap.style.display = (userVaults.length >= VAULT_SEARCH_THRESHOLD || singleVaultView) ? 'block' : 'none';
+    }
+
     if (userVaults.length === 0) {
         container.innerHTML = '<p style="color:#aaa">No vaults found.</p>';
         return;
     }
 
+    const visibleVaults = vaultSearchQuery
+        ? userVaults.filter(vault =>
+            vault.address.toLowerCase().includes(vaultSearchQuery) ||
+            vault.stakedTokenIds.some(id => id.toLowerCase().includes(vaultSearchQuery)))
+        : userVaults;
+
+    if (visibleVaults.length === 0) {
+        container.innerHTML = '<p style="color:#aaa">No vaults match your search.</p>';
+        return;
+    }
+
     let html = '';
-    for (const vault of userVaults) {
+    for (const vault of visibleVaults) {
         const lockLabel = vault.isLocked
             ? `<span style="color:#f0a500">LOCKED — unlocks in ${formatCountdown(vault.secondsLeft)}</span>`
             : `<span style="color:#4caf50">UNLOCKED</span>`;
