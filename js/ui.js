@@ -180,6 +180,123 @@ class MobileNotificationWidget {
 // Initialize the notification widget (will be initialized after DOM is ready)
 let notificationWidget = null;
 
+// =============================================================================
+// BUTTON-ANCHORED TOAST
+// =============================================================================
+
+let _lastClickedBtn = null;   // updated by the click listener (general fallback)
+let _actionAnchorBtn = null;  // pinned by setButtonToastAnchor; never touched by click listener
+let _anchoredToastEl = null;
+let _anchoredToastTimer = null;
+
+// Track the last clicked non-nav button as a general fallback only
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (btn && !btn.classList.contains('nav-tab')) _lastClickedBtn = btn;
+}, true);
+
+/**
+ * Pin the toast anchor to a specific button for the duration of an action.
+ * This is NOT overridden by subsequent clicks, so it survives wallet popups
+ * and other async interactions. Call at the very start of each action handler.
+ */
+export function setButtonToastAnchor(buttonId) {
+    const el = typeof buttonId === 'string' ? document.getElementById(buttonId) : buttonId;
+    if (el) _actionAnchorBtn = el;
+}
+
+/** Clear the pinned action anchor (call after an action completes). */
+export function clearButtonToastAnchor() {
+    _actionAnchorBtn = null;
+}
+
+/**
+ * Shows a small toast anchored near the last clicked button.
+ * Falls back to top-right if no button click has been recorded.
+ */
+export function showButtonToast(type = 'info', title = '', message = '', duration = 7000) {
+    // Clear any previous anchored toast immediately
+    if (_anchoredToastEl && _anchoredToastEl.parentNode) {
+        _anchoredToastEl.parentNode.removeChild(_anchoredToastEl);
+    }
+    if (_anchoredToastTimer) clearTimeout(_anchoredToastTimer);
+
+    const colors = { success: '#10b981', error: '#ef4444', info: '#3b82f6', warning: '#f0a500' };
+    const icons  = { success: '✓', error: '✕', info: 'ℹ', warning: '⚠' };
+    const color  = colors[type] || colors.info;
+    const icon   = icons[type]  || icons.info;
+
+    const toast = document.createElement('div');
+    toast.style.cssText = [
+        'position:fixed',
+        'z-index:99999',
+        'max-width:340px',
+        'min-width:180px',
+        `background:#1a1a2e`,
+        `border:1px solid ${color}`,
+        `border-left:4px solid ${color}`,
+        'border-radius:8px',
+        'padding:11px 14px',
+        'color:#fff',
+        'font-size:0.87em',
+        'line-height:1.45',
+        'box-shadow:0 6px 24px rgba(0,0,0,0.6)',
+        'pointer-events:none',
+        'opacity:0',
+        'transform:translateY(-8px)',
+        'transition:opacity 0.18s ease,transform 0.18s ease',
+    ].join(';');
+
+    toast.innerHTML =
+        `<div style="font-weight:700;color:${color};margin-bottom:${message ? '4px' : '0'}">${icon} ${title}</div>` +
+        (message ? `<div style="color:#ccc">${message}</div>` : '');
+
+    document.body.appendChild(toast);
+    _anchoredToastEl = toast;
+
+    // Prefer the pinned action anchor; fall back to the general click tracker
+    const btn = _actionAnchorBtn || _lastClickedBtn;
+    if (btn) {
+        const r   = btn.getBoundingClientRect();
+        const tw  = 340;
+        const th  = 90; // conservative height estimate
+
+        // getBoundingClientRect() is viewport-relative, but body has contain:paint
+        // which makes position:fixed relative to the body origin, not the viewport.
+        // Add scroll offsets to convert viewport coords → document coords.
+        const scrollX = window.scrollX || 0;
+        const scrollY = window.scrollY || 0;
+
+        // Horizontal: align with button left edge, clamp to viewport width
+        let left = r.left;
+        if (left + tw > window.innerWidth - 12) left = window.innerWidth - tw - 12;
+        if (left < 8) left = 8;
+
+        // Vertical: above button if room, otherwise below
+        const top = r.top > th + 12 ? r.top - th - 8 : r.bottom + 8;
+
+        toast.style.left = `${Math.round(left + scrollX)}px`;
+        toast.style.top  = `${Math.round(top  + scrollY)}px`;
+    } else {
+        // Fallback: top-right of the current viewport
+        toast.style.top   = `${Math.round(20 + (window.scrollY || 0))}px`;
+        toast.style.right = '20px';
+    }
+
+    // Animate in (double rAF ensures the initial opacity:0 is painted first)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        toast.style.opacity   = '1';
+        toast.style.transform = 'translateY(0)';
+    }));
+
+    // Auto-dismiss
+    _anchoredToastTimer = setTimeout(() => {
+        toast.style.opacity   = '0';
+        toast.style.transform = 'translateY(-8px)';
+        setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 220);
+    }, duration);
+}
+
 /**
  * Initialize notification widget after DOM is loaded
  */

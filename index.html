@@ -784,8 +784,8 @@
                             <input type="text" id="timelock-masquerade-input" placeholder="0x..." style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
                         </div>
                         <div style="display:flex;gap:10px;flex-wrap:wrap">
-                            <button class="btn-warning" onclick="Timelock.setMasquerade()">Load Vaults for Address</button>
-                            <button class="btn-secondary" onclick="Timelock.clearMasquerade()">Clear / Show My Vaults</button>
+                            <button id="timelockMasqueradeBtn" class="btn-warning" onclick="Timelock.setMasquerade()">Load Vaults for Address</button>
+                            <button id="timelockClearMasqueradeBtn" class="btn-secondary" onclick="Timelock.clearMasquerade()">Clear / Show My Vaults</button>
                         </div>
                     </div>
 
@@ -846,7 +846,7 @@
                         <!-- Rewards -->
                         <div class="info-card3">
                             <h2>Collect Rewards</h2>
-                            <p>Claim LP staking rewards accumulated by this vault. You can collect rewards at any time — the lock only applies to NFT withdrawals.</p>
+                            <p>Push LP staking rewards into this vault. Rewards are sent <strong>to the vault</strong> and remain timelocked alongside your NFTs — they cannot be withdrawn to your wallet until the timelock expires.</p>
                             <div style="display:flex;gap:12px;flex-wrap:wrap">
                                 <button class="btn-primary" id="timelockGetRewardsBtn" onclick="Timelock.getVaultRewards()">Collect All Rewards</button>
                                 <button class="btn-primary" id="timelockGetRewardsTokensBtn" onclick="Timelock.getVaultRewardsForTokens()">Collect B0x / 0xBTC / WETH Rewards</button>
@@ -862,10 +862,16 @@
                             </div>
                         </div>
 
-                        <!-- ERC-20 Deposit
+                        <!-- ERC-20 Deposit -->
                         <div class="info-card3">
                             <h2>Deposit ERC-20 Token</h2>
-                            <p>Lock ERC-20 tokens in this vault until the unlock time. The vault will hold them and only the owner can withdraw after unlock.</p>
+                            <p>Transfer ERC-20 tokens directly into this vault. They will be timelocked and only the vault owner can withdraw them after the timelock expires.</p>
+                            <div style="margin-bottom:18px;padding:14px;background:#161626;border:1px solid #f0a500;border-radius:8px">
+                                <div style="font-size:1.1em;color:#f0a500;margin-bottom:10px;font-weight:700;letter-spacing:0.04em">Your Wallet Balances</div>
+                                <div id="timelock-wallet-deposit-balances" style="font-size:0.95em">
+                                    <span style="color:#aaa">Select a vault to load balances.</span>
+                                </div>
+                            </div>
                             <div class="form-group">
                                 <label>Select Token</label>
                                 <select id="timelock-token-deposit-select" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
@@ -873,12 +879,18 @@
                                 </select>
                             </div>
                             <div class="form-group">
+                                <label>Custom ERC-20 Address <span style="color:#aaa;font-weight:400">(overrides dropdown)</span></label>
+                                <input type="text" id="timelock-token-deposit-custom" placeholder="0x... optional custom token address" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #f0a500;border-radius:6px;box-sizing:border-box">
+                            </div>
+                            <div class="form-group">
                                 <label>Amount</label>
-                                <input type="number" id="timelock-token-deposit-amount" placeholder="0.0" min="0" step="any" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
+                                <div style="display:flex;gap:8px;align-items:center">
+                                    <input type="number" id="timelock-token-deposit-amount" placeholder="0.0" min="0" step="any" style="flex:1;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
+                                    <button class="btn-secondary" onclick="Timelock.setMaxDepositAmount()" style="white-space:nowrap;padding:8px 16px">Max</button>
+                                </div>
                             </div>
                             <button class="btn-success" id="timelockDepositTokenBtn" onclick="Timelock.depositTokenToVault()">Deposit Token to Vault</button>
                         </div>
- -->
                         <!-- ERC-20 Withdraw -->
                         <div class="info-card3">
                             <h2>Withdraw ERC-20 Token</h2>

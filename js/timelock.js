@@ -27,7 +27,10 @@ import {
     showInfoNotificationCentered,
     showSuccessNotification,
     showErrorNotification,
-    showInfoNotification
+    showInfoNotification,
+    showButtonToast,
+    setButtonToastAnchor,
+    clearButtonToastAnchor
 } from './ui.js';
 
 import { positionData, stakingPositionData } from './positions.js';
@@ -316,46 +319,56 @@ export function loadTimelockPage() {
  * Your connected wallet is still used to sign permissionless withdrawal txs.
  */
 export async function setMasquerade() {
-    const input = document.getElementById('timelock-masquerade-input');
-    const addr = input?.value?.trim();
+    setButtonToastAnchor('timelockMasqueradeBtn');
+    try {
+        const input = document.getElementById('timelock-masquerade-input');
+        const addr = input?.value?.trim();
 
-    if (!addr || !ethers.utils.isAddress(addr)) {
-        showErrorNotificationCentered('Invalid Address', 'Enter a valid Ethereum address to masquerade as.');
-        return;
+        if (!addr || !ethers.utils.isAddress(addr)) {
+            showButtonToast('error', 'Invalid Address', 'Enter a valid Ethereum address to masquerade as.');
+            return;
+        }
+
+        masqueradeAddress = ethers.utils.getAddress(addr);
+        selectedVaultAddress = null;
+
+        const panel = document.getElementById('timelock-vault-actions');
+        if (panel) panel.style.display = 'none';
+
+        _updateMasqueradeBanner();
+
+        if (!isFactoryDeployed()) {
+            showButtonToast('error', 'Not Deployed', 'TimeLock Factory address not set.');
+            return;
+        }
+
+        showButtonToast('info', 'Masquerading', `Loading vaults for ${masqueradeAddress}...`);
+        await loadUserVaults();
+    } finally {
+        clearButtonToastAnchor();
     }
-
-    masqueradeAddress = ethers.utils.getAddress(addr); // checksum
-    selectedVaultAddress = null;
-
-    const panel = document.getElementById('timelock-vault-actions');
-    if (panel) panel.style.display = 'none';
-
-    _updateMasqueradeBanner();
-
-    if (!isFactoryDeployed()) {
-        showErrorNotificationCentered('Not Deployed', 'TimeLock Factory address not set.');
-        return;
-    }
-
-    showInfoNotificationCentered('Masquerading', `Loading vaults for ${masqueradeAddress}...`);
-    await loadUserVaults();
 }
 
 /**
  * Clears masquerade mode and reloads the connected wallet's own vaults.
  */
 export async function clearMasquerade() {
-    masqueradeAddress = null;
-    selectedVaultAddress = null;
+    setButtonToastAnchor('timelockClearMasqueradeBtn');
+    try {
+        masqueradeAddress = null;
+        selectedVaultAddress = null;
 
-    const input = document.getElementById('timelock-masquerade-input');
-    if (input) input.value = '';
+        const input = document.getElementById('timelock-masquerade-input');
+        if (input) input.value = '';
 
-    const panel = document.getElementById('timelock-vault-actions');
-    if (panel) panel.style.display = 'none';
+        const panel = document.getElementById('timelock-vault-actions');
+        if (panel) panel.style.display = 'none';
 
-    _updateMasqueradeBanner();
-    await loadUserVaults();
+        _updateMasqueradeBanner();
+        await loadUserVaults();
+    } finally {
+        clearButtonToastAnchor();
+    }
 }
 
 function _updateMasqueradeBanner() {
@@ -514,7 +527,7 @@ function renderVaultCards(container) {
         html += `
         <div class="timelock-vault-card ${selectedVaultAddress === vault.address ? 'selected' : ''}">
             <div class="timelock-vault-header">
-                <span class="timelock-vault-addr" title="${vault.address}">${shortAddr}</span>
+                <a class="timelock-vault-addr" href="https://basescan.org/address/${vault.address}#readContract#F6" target="_blank" rel="noopener noreferrer" title="${vault.address}" style="color:inherit;text-decoration:underline dotted">${shortAddr}</a>
                 ${lockLabel}
             </div>
             <div class="timelock-vault-detail">Unlocks: ${formatUnlockTime(vault.unlockTime)}</div>
@@ -540,6 +553,7 @@ export async function refreshSelectedVault() {
         await refreshVaultStatus(selectedVaultAddress);
         await populateNFTSelectors(selectedVaultAddress);
         await loadVaultTokenBalances(selectedVaultAddress);
+        await loadWalletDepositBalances();
     }
 }
 
@@ -558,11 +572,12 @@ export async function selectVault(vaultAddress) {
     if (panel) panel.style.display = 'block';
 
     const addrEl = document.getElementById('timelock-selected-vault-addr');
-    if (addrEl) addrEl.textContent = vaultAddress;
+    if (addrEl) addrEl.innerHTML = `<a href="https://basescan.org/address/${vaultAddress}#readContract#F6" target="_blank" rel="noopener noreferrer" style="color:#aaa;text-decoration:underline dotted">${vaultAddress}</a>`;
 
     await refreshVaultStatus(vaultAddress);
     await populateNFTSelectors(vaultAddress);
     await loadVaultTokenBalances(vaultAddress);
+    await loadWalletDepositBalances();
 }
 
 async function refreshVaultStatus(vaultAddress) {
@@ -613,15 +628,21 @@ async function populateNFTSelectors(vaultAddress) {
         }
     }
 
-    // Populate ERC-20 token dropdowns
-    const tokenOptions = DEPOSIT_TOKENS
+    // Populate deposit dropdown (B0x, 0xBTC, RightsTo0xBitcoin)
+    const depositOptions = DEPOSIT_TOKENS
         .filter(t => tokenAddresses[t.key] && tokenAddresses[t.key] !== '0x0000000000000000000000000000000000000000')
         .map(t => `<option value="${tokenAddresses[t.key]}">${t.symbol}</option>`)
         .join('');
     const depositTokenSelect = document.getElementById('timelock-token-deposit-select');
-    if (depositTokenSelect) depositTokenSelect.innerHTML = tokenOptions;
+    if (depositTokenSelect) depositTokenSelect.innerHTML = depositOptions;
+
+    // Populate withdraw dropdown (broader set)
+    const withdrawOptions = WITHDRAW_TOKENS
+        .filter(t => tokenAddresses[t.key] && tokenAddresses[t.key] !== '0x0000000000000000000000000000000000000000')
+        .map(t => `<option value="${tokenAddresses[t.key]}">${t.symbol}</option>`)
+        .join('');
     const withdrawTokenSelect = document.getElementById('timelock-token-withdraw-select');
-    if (withdrawTokenSelect) withdrawTokenSelect.innerHTML = tokenOptions;
+    if (withdrawTokenSelect) withdrawTokenSelect.innerHTML = withdrawOptions;
 
     // Populate "withdraw NFT" dropdown from vault's own getStakedTokenIds()
     // — must be vault-specific so we don't show NFTs staked directly (not through this vault)
@@ -786,46 +807,50 @@ async function populateNFTSelectors(vaultAddress) {
  * Creates a new TimeLockVault via the factory contract.
  */
 export async function createVault() {
-    if (!window.walletConnected) {
-        await window.connectWallet();
-    }
-
-    if (!isFactoryDeployed()) {
-        showErrorNotificationCentered('Not Deployed', 'TimeLock Factory address not set. Update TIMELOCK_FACTORY_ADDRESS in timelock.js.');
-        return;
-    }
-
-    const dtInput = document.getElementById('timelock-unlock-datetime');
-    if (!dtInput || !dtInput.value) {
-        showErrorNotificationCentered('Missing Date', 'Please select an unlock date and time.');
-        return;
-    }
-
-    const unlockTimestamp = Math.floor(new Date(dtInput.value).getTime() / 1000);
-    const nowTs = Math.floor(Date.now() / 1000);
-
-    if (unlockTimestamp <= nowTs) {
-        showErrorNotificationCentered('Invalid Date', 'Unlock time must be in the future.');
-        return;
-    }
-
-    disableBtn('timelockCreateVaultBtn');
-
+    setButtonToastAnchor('timelockCreateVaultBtn');
     try {
-        const factory = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, window.signer);
-        showInfoNotificationCentered('Creating Vault', 'Confirm the transaction in your wallet...');
+        if (!window.walletConnected) {
+            await window.connectWallet();
+        }
 
-        const tx = await factory.createVault(unlockTimestamp);
-        showInfoNotificationCentered('Waiting...', 'Transaction submitted, waiting for confirmation...');
-        const receipt = await tx.wait();
+        if (!isFactoryDeployed()) {
+            showButtonToast('error', 'Not Deployed', 'TimeLock Factory address not set. Update TIMELOCK_FACTORY_ADDRESS in timelock.js.');
+            return;
+        }
 
-        showSuccessNotificationCentered('Vault Created!', 'Your TimeLock vault has been deployed.');
-        await loadUserVaults();
-    } catch (err) {
-        console.error('createVault error:', err);
-        showErrorNotificationCentered('Failed', err.reason || err.message || 'Could not create vault.');
+        const dtInput = document.getElementById('timelock-unlock-datetime');
+        if (!dtInput || !dtInput.value) {
+            showButtonToast('error', 'Missing Date', 'Please select an unlock date and time.');
+            return;
+        }
+
+        const unlockTimestamp = Math.floor(new Date(dtInput.value).getTime() / 1000);
+        const nowTs = Math.floor(Date.now() / 1000);
+
+        if (unlockTimestamp <= nowTs) {
+            showButtonToast('error', 'Invalid Date', 'Unlock time must be in the future.');
+            return;
+        }
+
+        disableBtn('timelockCreateVaultBtn');
+        try {
+            const factory = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, window.signer);
+            showButtonToast('info', 'Creating Vault', 'Confirm the transaction in your wallet...');
+
+            const tx = await factory.createVault(unlockTimestamp);
+            showButtonToast('info', 'Waiting...', 'Transaction submitted, waiting for confirmation...');
+            await tx.wait();
+
+            showButtonToast('success', 'Vault Created!', 'Your TimeLock vault has been deployed.');
+            await loadUserVaults();
+        } catch (err) {
+            console.error('createVault error:', err);
+            showButtonToast('error', 'Failed', err.reason || err.message || 'Could not create vault.');
+        } finally {
+            enableBtn('timelockCreateVaultBtn');
+        }
     } finally {
-        enableBtn('timelockCreateVaultBtn');
+        clearButtonToastAnchor();
     }
 }
 
@@ -837,9 +862,11 @@ export async function createVault() {
  * Approves the vault to transfer the NFT, then calls vault.stakeUniswapV4NFT().
  */
 export async function stakeNFTToVault() {
+    setButtonToastAnchor('timelockStakeNFTBtn');
+    try {
     if (!window.walletConnected) await window.connectWallet();
     if (!selectedVaultAddress) {
-        showErrorNotificationCentered('No Vault Selected', 'Please select a vault first.');
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
         return;
     }
 
@@ -857,8 +884,48 @@ export async function stakeNFTToVault() {
     const customStakeId = document.getElementById('timelock-nft-custom-id')?.value?.trim();
     const tokenId = customStakeId || document.getElementById('timelock-nft-select')?.value;
     if (!tokenId) {
-        showErrorNotificationCentered('No NFT Selected', 'Please select an NFT position to stake or enter a custom Token #.');
+        showButtonToast('error', 'No NFT Selected', 'Please select an NFT position to stake or enter a custom Token #.');
         return;
+    }
+
+    // Always show a staking confirmation summary
+    const vaultInfo = userVaults.find(v => v.address === selectedVaultAddress);
+    {
+        const vaultOwner = masqueradeAddress || window.userAddress;
+        const isYou = vaultOwner && window.userAddress &&
+            vaultOwner.toLowerCase() === window.userAddress.toLowerCase();
+        const daysUntilUnlock = vaultInfo && vaultInfo.secondsLeft > 0
+            ? Math.floor(vaultInfo.secondsLeft / 86400)
+            : 0;
+        const unlockStr = !vaultInfo || vaultInfo.secondsLeft <= 0
+            ? 'already unlocked'
+            : `${daysUntilUnlock} day${daysUntilUnlock !== 1 ? 's' : ''} from now`;
+        const stakeConfirmed = window.confirm(
+            `You are staking Uniswap V4 Liquidity Pool NFT #${tokenId} into a Timelock Contract.\n\n` +
+            `This Timelock Contract is owned by ${vaultOwner || 'Unknown'} ${isYou ? '(You)' : '(Not You)'}.\n\n` +
+            `It will unlock in ${unlockStr} to the owner of the contract.`
+        );
+        if (!stakeConfirmed) return;
+    }
+
+    // Warn if the vault has less than 30 days remaining (including unlocked vaults)
+    if (vaultInfo && vaultInfo.secondsLeft < 30 * 86400) {
+        const daysLeft = Math.floor(vaultInfo.secondsLeft / 86400);
+        const hrsLeft  = Math.floor((vaultInfo.secondsLeft % 86400) / 3600);
+        const timeStr  = !vaultInfo.isLocked
+            ? 'already unlocked (0 days remaining)'
+            : daysLeft > 0
+                ? `approximately ${daysLeft} day${daysLeft !== 1 ? 's' : ''} and ${hrsLeft} hour${hrsLeft !== 1 ? 's' : ''}`
+                : `approximately ${hrsLeft} hour${hrsLeft !== 1 ? 's' : ''}`;
+        const confirmed = window.confirm(
+            `⚠️ Short Timelock Warning — Staking Fees May Apply\n\n` +
+            `This vault is ${timeStr} (less than 30 days).\n\n` +
+            `When you deposit this NFT it will be staked into the LP staking contract. The staking contract charges early withdrawal fees that decrease the longer your position is staked.\n\n` +
+            `Important: once the vault unlocks, anyone can trigger a withdrawal of your staking assets back to your wallet — you do not have to do it yourself. This means you may be charged a withdrawal fee even if you never personally withdraw, simply because someone else triggers it before your position has been staked for 30 days.\n\n` +
+            `Fee scale: ~20% if staked less than 1 day, scaling down to ~1% at 30 days.\n\n` +
+            `Are you sure you want to deposit this NFT?`
+        );
+        if (!confirmed) return;
     }
 
     disableBtn('timelockStakeNFTBtn');
@@ -867,26 +934,27 @@ export async function stakeNFTToVault() {
         const nftManager = new ethers.Contract(positionManager_address, NFT_APPROVE_ABI, window.signer);
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
 
-        showInfoNotificationCentered('Step 1/2 — Approve NFT', `Approve NFT #${tokenId} for the vault. Confirm in your wallet.`);
+        showButtonToast('info', 'Step 1/2 — Approve NFT', `Approve NFT #${tokenId} for the vault. Confirm in your wallet.`);
         const approveTx = await nftManager.approve(selectedVaultAddress, tokenId);
         await approveTx.wait();
-        showSuccessNotificationCentered('Approved!', 'Now confirm the stake transaction.');
+        showButtonToast('success', 'Approved!', 'Now confirm the stake transaction.');
 
-        showInfoNotificationCentered('Step 2/2 — Stake NFT', 'Staking NFT through the vault. Confirm in your wallet.');
+        showButtonToast('info', 'Step 2/2 — Stake NFT', 'Staking NFT through the vault. Confirm in your wallet.');
         const stakeTx = await vaultContract.stakeUniswapV4NFT(tokenId);
         await stakeTx.wait();
 
-        showSuccessNotificationCentered('NFT Staked!', `NFT #${tokenId} is now staked in your vault.`);
+        showButtonToast('success', 'NFT Staked!', `NFT #${tokenId} is now staked in your vault.`);
         if (window.getTokenIDsOwnedByMetamask) await window.getTokenIDsOwnedByMetamask(true);
         await loadUserVaults();
         await selectVault(selectedVaultAddress);
         renderAllowedNFTs();
     } catch (err) {
         console.error('stakeNFTToVault error:', err);
-        showErrorNotificationCentered('Stake Failed', decodeVaultError(err));
+        showButtonToast('error', 'Stake Failed', decodeVaultError(err));
     } finally {
         enableBtn('timelockStakeNFTBtn');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // ============================================
@@ -897,16 +965,18 @@ export async function stakeNFTToVault() {
  * Withdraws a staked NFT from the vault back to the owner (only after unlock).
  */
 export async function withdrawNFTFromVault() {
+    setButtonToastAnchor('timelockWithdrawNFTBtn');
+    try {
     if (!window.walletConnected) await window.connectWallet();
     if (!selectedVaultAddress) {
-        showErrorNotificationCentered('No Vault Selected', 'Please select a vault first.');
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
         return;
     }
 
     const customWithdrawId = document.getElementById('timelock-withdraw-custom-id')?.value?.trim();
     const tokenId = customWithdrawId || document.getElementById('timelock-staked-nft-select')?.value;
     if (!tokenId) {
-        showErrorNotificationCentered('No NFT Selected', 'Please select a staked NFT to withdraw or enter a custom Token #.');
+        showButtonToast('error', 'No NFT Selected', 'Please select a staked NFT to withdraw or enter a custom Token #.');
         return;
     }
 
@@ -914,19 +984,20 @@ export async function withdrawNFTFromVault() {
 
     try {
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
-        showInfoNotificationCentered('Withdrawing NFT', `Withdrawing NFT #${tokenId}. Confirm in your wallet.`);
+        showButtonToast('info', 'Withdrawing NFT', `Withdrawing NFT #${tokenId}. Confirm in your wallet.`);
         const tx = await vaultContract.withdrawNFT(tokenId);
         await tx.wait();
-        showSuccessNotificationCentered('NFT Withdrawn!', `NFT #${tokenId} has been returned to your wallet.`);
+        showButtonToast('success', 'NFT Withdrawn!', `NFT #${tokenId} has been returned to your wallet.`);
         await loadUserVaults();
         await selectVault(selectedVaultAddress);
         await loadVaultTokenBalances(selectedVaultAddress);
     } catch (err) {
         console.error('withdrawNFTFromVault error:', err);
-        showErrorNotificationCentered('Withdrawal Failed', decodeVaultError(err));
+        showButtonToast('error', 'Withdrawal Failed', decodeVaultError(err));
     } finally {
         enableBtn('timelockWithdrawNFTBtn');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // ============================================
@@ -937,9 +1008,11 @@ export async function withdrawNFTFromVault() {
  * Calls getRewards() on the vault to collect all staking rewards.
  */
 export async function getVaultRewards() {
+    setButtonToastAnchor('timelockGetRewardsBtn');
+    try {
     if (!window.walletConnected) await window.connectWallet();
     if (!selectedVaultAddress) {
-        showErrorNotificationCentered('No Vault Selected', 'Please select a vault first.');
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
         return;
     }
 
@@ -947,26 +1020,29 @@ export async function getVaultRewards() {
 
     try {
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
-        showInfoNotificationCentered('Collecting Rewards', 'Confirm in your wallet.');
+        showButtonToast('info', 'Collecting Rewards', 'Confirm in your wallet.');
         const tx = await vaultContract.getRewards();
         await tx.wait();
-        showSuccessNotificationCentered('Rewards Collected!', 'Staking rewards sent to your vault.');
+        showButtonToast('success', 'Rewards Collected!', 'Staking rewards sent to your vault.');
         await loadVaultTokenBalances(selectedVaultAddress);
     } catch (err) {
         console.error('getVaultRewards error:', err);
-        showErrorNotificationCentered('Failed', err.reason || err.message || 'Could not collect rewards.');
+        showButtonToast('error', 'Failed', err.reason || err.message || 'Could not collect rewards.');
     } finally {
         enableBtn('timelockGetRewardsBtn');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 /**
  * Calls getRewardForTokensContract() with the default reward tokens (B0x, 0xBTC).
  */
 export async function getVaultRewardsForTokens() {
+    setButtonToastAnchor('timelockGetRewardsTokensBtn');
+    try {
     if (!window.walletConnected) await window.connectWallet();
     if (!selectedVaultAddress) {
-        showErrorNotificationCentered('No Vault Selected', 'Please select a vault first.');
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
         return;
     }
 
@@ -980,17 +1056,18 @@ export async function getVaultRewardsForTokens() {
 
     try {
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
-        showInfoNotificationCentered('Collecting Token Rewards', 'Confirm in your wallet.');
+        showButtonToast('info', 'Collecting Token Rewards', 'Confirm in your wallet.');
         const tx = await vaultContract.getRewardForTokensContract(rewardTokens);
         await tx.wait();
-        showSuccessNotificationCentered('Token Rewards Collected!', 'Rewards claimed for B0x, 0xBTC, WETH.');
+        showButtonToast('success', 'Token Rewards Collected!', 'Rewards claimed for B0x, 0xBTC, WETH.');
         await loadVaultTokenBalances(selectedVaultAddress);
     } catch (err) {
         console.error('getVaultRewardsForTokens error:', err);
-        showErrorNotificationCentered('Failed', err.reason || err.message || 'Could not collect token rewards.');
+        showButtonToast('error', 'Failed', err.reason || err.message || 'Could not collect token rewards.');
     } finally {
         enableBtn('timelockGetRewardsTokensBtn');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // ============================================
@@ -1002,9 +1079,11 @@ export async function getVaultRewardsForTokens() {
  * Collects all rewards and exits LP positions.
  */
 export async function exitAllFromVault() {
+    setButtonToastAnchor('timelockExitAllBtn');
+    try {
     if (!window.walletConnected) await window.connectWallet();
     if (!selectedVaultAddress) {
-        showErrorNotificationCentered('No Vault Selected', 'Please select a vault first.');
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
         return;
     }
 
@@ -1017,19 +1096,20 @@ export async function exitAllFromVault() {
 
     try {
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
-        showInfoNotification('Exiting All', `Calling exitAllTogether(${startIndex}, ${count}). Confirm in wallet.`);
+        showButtonToast('info', 'Exiting All', `Calling exitAllTogether(${startIndex}, ${count}). Confirm in wallet.`);
         const tx = await vaultContract.exitAllTogether(startIndex, count);
         await tx.wait();
-        showSuccessNotification('Exit Complete!', 'All rewards collected and LP positions exited.');
+        showButtonToast('success', 'Exit Complete!', 'All rewards collected and LP positions exited.');
         await loadUserVaults();
         await selectVault(selectedVaultAddress);
         await loadVaultTokenBalances(selectedVaultAddress);
     } catch (err) {
         console.error('exitAllFromVault error:', err);
-        showErrorNotification('Failed', err.reason || err.message || 'Exit failed.');
+        showButtonToast('error', 'Failed', err.reason || err.message || 'Exit failed.');
     } finally {
         enableBtn('timelockExitAllBtn');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // ============================================
@@ -1040,9 +1120,11 @@ export async function exitAllFromVault() {
  * Transfers vault ownership to a new address (only while vault is locked).
  */
 export async function transferVaultOwnership() {
+    setButtonToastAnchor('timelockTransferOwnerBtn');
+    try {
     if (!window.walletConnected) await window.connectWallet();
     if (!selectedVaultAddress) {
-        showErrorNotification('No Vault Selected', 'Please select a vault first.');
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
         return;
     }
 
@@ -1050,7 +1132,7 @@ export async function transferVaultOwnership() {
     const newOwner = input?.value?.trim();
 
     if (!newOwner || !ethers.utils.isAddress(newOwner)) {
-        showErrorNotification('Invalid Address', 'Please enter a valid Ethereum address.');
+        showButtonToast('error', 'Invalid Address', 'Please enter a valid Ethereum address.');
         return;
     }
 
@@ -1067,18 +1149,19 @@ export async function transferVaultOwnership() {
 
     try {
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
-        showInfoNotification('Transferring Ownership', `Transferring to ${newOwner}. Confirm in wallet.`);
+        showButtonToast('info', 'Transferring Ownership', `Transferring to ${newOwner}. Confirm in wallet.`);
         const tx = await vaultContract.transferOwnership(newOwner);
         await tx.wait();
-        showSuccessNotification('Ownership Transferred!', `Vault is now owned by ${newOwner}.`);
+        showButtonToast('success', 'Ownership Transferred!', `Vault is now owned by ${newOwner}.`);
         if (input) input.value = '';
         await loadUserVaults();
     } catch (err) {
         console.error('transferVaultOwnership error:', err);
-        showErrorNotification('Failed', err.reason || err.message || 'Transfer failed. Vault may be unlocked.');
+        showButtonToast('error', 'Failed', err.reason || err.message || 'Transfer failed. Vault may be unlocked.');
     } finally {
         enableBtn('timelockTransferOwnerBtn');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // ============================================
@@ -1087,74 +1170,119 @@ export async function transferVaultOwnership() {
 
 const ERC20_MINIMAL_ABI = [
     { "inputs": [{ "internalType": "address", "name": "spender", "type": "address" }, { "internalType": "uint256", "name": "amount", "type": "uint256" }], "name": "approve", "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }], "stateMutability": "nonpayable", "type": "function" },
+    { "inputs": [{ "internalType": "address", "name": "to", "type": "address" }, { "internalType": "uint256", "name": "amount", "type": "uint256" }], "name": "transfer", "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }], "stateMutability": "nonpayable", "type": "function" },
     { "inputs": [{ "internalType": "address", "name": "owner", "type": "address" }, { "internalType": "address", "name": "spender", "type": "address" }], "name": "allowance", "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }], "stateMutability": "view", "type": "function" },
     { "inputs": [{ "internalType": "address", "name": "account", "type": "address" }], "name": "balanceOf", "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }], "stateMutability": "view", "type": "function" },
-    { "inputs": [], "name": "decimals", "outputs": [{ "internalType": "uint8", "name": "", "type": "uint8" }], "stateMutability": "view", "type": "function" }
+    { "inputs": [], "name": "decimals", "outputs": [{ "internalType": "uint8", "name": "", "type": "uint8" }], "stateMutability": "view", "type": "function" },
+    { "inputs": [], "name": "symbol", "outputs": [{ "internalType": "string", "name": "", "type": "string" }], "stateMutability": "view", "type": "function" }
 ];
 
-// Tokens available for ERC-20 deposit/withdraw
+// Tokens shown in the deposit dropdown
 const DEPOSIT_TOKENS = [
+    { symbol: 'B0x',              key: 'B0x' },
+    { symbol: '0xBTC',            key: '0xBTC' },
+    { symbol: 'RightsTo0xBitcoin', key: 'RightsTo0xBTC' },
+];
+
+// Tokens available in the withdraw dropdown (broader set)
+const WITHDRAW_TOKENS = [
     { symbol: 'B0x',          key: 'B0x' },
     { symbol: '0xBTC',        key: '0xBTC' },
     { symbol: 'WETH',         key: 'WETH' },
     { symbol: 'USDC',         key: 'USDC' },
-    { symbol: 'RightsTo0xBTC', key: 'RightsTo0xBTC' },
+    { symbol: 'RightsTo0xBitcoin', key: 'RightsTo0xBTC' },
 ];
 
 /**
- * Approve (if needed) then deposit an ERC-20 token into the selected vault.
+ * Transfer an ERC-20 token directly into the selected vault (timelocked until unlock).
  */
 export async function depositTokenToVault() {
+    setButtonToastAnchor('timelockDepositTokenBtn');
+    try {
     if (!window.walletConnected) await window.connectWallet();
     if (!selectedVaultAddress) {
-        showErrorNotificationCentered('No Vault Selected', 'Please select a vault first.');
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
         return;
     }
 
+    const customInput = document.getElementById('timelock-token-deposit-custom');
+    const customAddr  = customInput?.value?.trim();
     const tokenSelect = document.getElementById('timelock-token-deposit-select');
     const amountInput = document.getElementById('timelock-token-deposit-amount');
-    const tokenAddr = tokenSelect?.value;
-    const amountStr = amountInput?.value?.trim();
 
-    if (!tokenAddr || tokenAddr === '') {
-        showErrorNotificationCentered('No Token', 'Please select a token to deposit.');
+    const tokenAddr = (customAddr && ethers.utils.isAddress(customAddr))
+        ? ethers.utils.getAddress(customAddr)
+        : tokenSelect?.value;
+
+    if (!tokenAddr || !ethers.utils.isAddress(tokenAddr)) {
+        showButtonToast('error', 'No Token', 'Please select a token or enter a valid custom ERC-20 address.');
         return;
     }
+
+    const amountStr = amountInput?.value?.trim();
     if (!amountStr || isNaN(amountStr) || Number(amountStr) <= 0) {
-        showErrorNotificationCentered('Invalid Amount', 'Please enter a valid amount.');
+        showButtonToast('error', 'Invalid Amount', 'Please enter a valid amount.');
         return;
     }
+
+    // Fetch decimals and symbol before showing confirmation
+    let decimals = 18;
+    let symbol = tokenAddr.slice(0, 8) + '...';
+    try {
+        const readProvider = new ethers.providers.JsonRpcProvider(
+            (typeof window.customRPC !== 'undefined' && window.customRPC) ? window.customRPC : 'https://mainnet.base.org'
+        );
+        const tokenRead = new ethers.Contract(tokenAddr, ERC20_MINIMAL_ABI, readProvider);
+        [decimals, symbol] = await Promise.all([tokenRead.decimals(), tokenRead.symbol()]);
+    } catch (e) {
+        console.warn('[Timelock] Could not fetch token metadata:', e);
+    }
+
+    // Build unlock info for the popup
+    const vaultInfo = userVaults.find(v => v.address === selectedVaultAddress);
+    const vaultOwner = masqueradeAddress || window.userAddress;
+    const daysLeft = vaultInfo && vaultInfo.secondsLeft > 0 ? Math.floor(vaultInfo.secondsLeft / 86400) : 0;
+    const unlockStr = !vaultInfo || vaultInfo.secondsLeft <= 0
+        ? 'already unlocked'
+        : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} from now`;
+
+    const isYou = vaultOwner && window.userAddress &&
+        vaultOwner.toLowerCase() === window.userAddress.toLowerCase();
+    const ownerLabel = isYou ? '(You)' : '(NOT You)';
+
+    const confirmed = window.confirm(
+        `You are about to deposit ${amountStr} ${symbol} into a Timelock Contract.\n\n` +
+        `Token: ${symbol} (${tokenAddr})\n` +
+        `Vault: ${selectedVaultAddress}\n` +
+        `Vault Owner: ${vaultOwner || 'Unknown'} ${ownerLabel}\n\n` +
+        `These tokens will be transferred directly to the vault contract and timelocked. Only the vault owner can withdraw them after the timelock expires (${unlockStr}).\n\n` +
+        `This is a direct token transfer — it cannot be reversed until the timelock expires.\n\n` +
+        `Are you sure you want to proceed?`
+    );
+    if (!confirmed) return;
 
     disableBtn('timelockDepositTokenBtn');
 
     try {
         const tokenContract = new ethers.Contract(tokenAddr, ERC20_MINIMAL_ABI, window.signer);
-        const decimals = await tokenContract.decimals();
         const amount = ethers.utils.parseUnits(amountStr, decimals);
 
-        // Check allowance
-        const allowance = await tokenContract.allowance(window.userAddress, selectedVaultAddress);
-        if (allowance.lt(amount)) {
-            showInfoNotificationCentered('Step 1/2 — Approve Token', 'Approve the vault to spend your tokens. Confirm in wallet.');
-            const approveTx = await tokenContract.approve(selectedVaultAddress, ethers.constants.MaxUint256);
-            await approveTx.wait();
-            showSuccessNotificationCentered('Approved!', 'Now confirm the deposit transaction.');
-        }
+        showButtonToast('info', 'Transferring Token', `Sending ${amountStr} ${symbol} to vault. Confirm in your wallet.`);
+        const tx = await tokenContract.transfer(selectedVaultAddress, amount);
+        await tx.wait();
 
-        const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
-        showInfoNotificationCentered('Depositing Token', 'Confirm the deposit in your wallet.');
-        const depositTx = await vaultContract.depositToken(tokenAddr, amount);
-        await depositTx.wait();
-
-        showSuccessNotificationCentered('Token Deposited!', `${amountStr} tokens locked in vault until unlock time.`);
+        showButtonToast('success', 'Token Deposited!', `${amountStr} ${symbol} is now locked in the vault until ${unlockStr}.`);
         if (amountInput) amountInput.value = '';
+        if (customInput) customInput.value = '';
         await loadVaultTokenBalances(selectedVaultAddress);
+        await loadWalletDepositBalances();
     } catch (err) {
         console.error('depositTokenToVault error:', err);
-        showErrorNotificationCentered('Deposit Failed', decodeVaultError(err));
+        showButtonToast('error', 'Deposit Failed', decodeVaultError(err));
     } finally {
         enableBtn('timelockDepositTokenBtn');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // ============================================
@@ -1165,9 +1293,11 @@ export async function depositTokenToVault() {
  * Withdraw all of a given ERC-20 token from the vault to the owner (after unlock).
  */
 export async function withdrawTokenFromVault() {
+    setButtonToastAnchor('timelockWithdrawTokenBtn');
+    try {
     if (!window.walletConnected) await window.connectWallet();
     if (!selectedVaultAddress) {
-        showErrorNotificationCentered('No Vault Selected', 'Please select a vault first.');
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
         return;
     }
 
@@ -1178,11 +1308,11 @@ export async function withdrawTokenFromVault() {
         ? ethers.utils.getAddress(customAddr)
         : tokenSelect?.value;
     if (!tokenAddr || tokenAddr === '') {
-        showErrorNotificationCentered('No Token', 'Please select a token or enter a custom ERC-20 address.');
+        showButtonToast('error', 'No Token', 'Please select a token or enter a custom ERC-20 address.');
         return;
     }
     if (customAddr && !ethers.utils.isAddress(customAddr)) {
-        showErrorNotificationCentered('Invalid Address', 'The custom ERC-20 address is not valid.');
+        showButtonToast('error', 'Invalid Address', 'The custom ERC-20 address is not valid.');
         return;
     }
 
@@ -1202,30 +1332,33 @@ export async function withdrawTokenFromVault() {
         ]);
         if(tokenAddr != tokenAddresses['WETH']){
         if (vaultBal.isZero()) {
-            showErrorNotification('No Balance', 'No balance of that token in this vault.');
+            showButtonToast('error', 'No Balance', 'No balance of that token in this vault.');
             enableBtn('timelockWithdrawTokenBtn');
+            clearButtonToastAnchor();
             return;
         }
     }
         if (isLocked) {
             const secsLeft = await vaultRead.secondsUntilUnlock();
-            showErrorNotification('Still Locked', `Vault unlocks in ${formatCountdown(secsLeft.toNumber())}. Withdrawals are only allowed after unlock.`);
+            showButtonToast('error', 'Still Locked', `Vault unlocks in ${formatCountdown(secsLeft.toNumber())}. Withdrawals are only allowed after unlock.`);
             enableBtn('timelockWithdrawTokenBtn');
+            clearButtonToastAnchor();
             return;
         }
 
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
-        showInfoNotification('Withdrawing Token', 'Withdrawing all of this token to your wallet. Confirm in wallet.');
+        showButtonToast('info', 'Withdrawing Token', 'Withdrawing all of this token to your wallet. Confirm in wallet.');
         const tx = await vaultContract.withdrawToken(tokenAddr);
         await tx.wait();
-        showSuccessNotification('Token Withdrawn!', 'Token balance returned to your wallet.');
+        showButtonToast('success', 'Token Withdrawn!', 'Token balance returned to your wallet.');
         await loadVaultTokenBalances(selectedVaultAddress);
     } catch (err) {
         console.error('withdrawTokenFromVault error:', err);
-        showErrorNotification('Withdrawal Failed', decodeVaultError(err));
+        showButtonToast('error', 'Withdrawal Failed', decodeVaultError(err));
     } finally {
         enableBtn('timelockWithdrawTokenBtn');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // ============================================
@@ -1255,7 +1388,7 @@ export async function loadVaultTokenBalances(vaultAddress) {
     // Known decimals — avoids extra calls
     const DECIMALS = { B0x: 18, '0xBTC': 8, WETH: 18, USDC: 6, RightsTo0xBTC: 18 };
 
-    const validTokens = DEPOSIT_TOKENS.filter(
+    const validTokens = WITHDRAW_TOKENS.filter(
         t => tokenAddresses[t.key] && tokenAddresses[t.key] !== '0x0000000000000000000000000000000000000000'
     );
 
@@ -1306,6 +1439,127 @@ export async function loadVaultTokenBalances(vaultAddress) {
         }
     }
     container.innerHTML = rows || '<p style="color:#aaa">No balances found.</p>';
+}
+
+// ============================================
+// WALLET DEPOSIT BALANCES
+// ============================================
+
+const DECIMALS_MAP = { B0x: 18, '0xBTC': 8, WETH: 18, USDC: 6, RightsTo0xBTC: 18 };
+
+/**
+ * Loads the connected wallet's balances for the 3 deposit tokens and renders them
+ * inside the deposit card so the user knows how much they can send.
+ */
+export async function loadWalletDepositBalances() {
+    const container = document.getElementById('timelock-wallet-deposit-balances');
+    if (!container) return;
+
+    const walletAddr = window.userAddress;
+    if (!walletAddr) {
+        container.innerHTML = '<span style="color:#aaa">Connect wallet to see balances.</span>';
+        return;
+    }
+
+    const rpcUrl = (typeof window.customRPC !== 'undefined' && window.customRPC)
+        ? window.customRPC : 'https://mainnet.base.org';
+    const readProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+
+    const fmt = (n) => {
+        if (n === 0) return '0';
+        if (n < 0.000001) return n.toExponential(4);
+        if (n < 0.001)    return n.toPrecision(4);
+        return n.toPrecision(6).replace(/\.?0+$/, '');
+    };
+
+    const validTokens = DEPOSIT_TOKENS.filter(
+        t => tokenAddresses[t.key] && tokenAddresses[t.key] !== '0x0000000000000000000000000000000000000000'
+    );
+
+    const erc20Iface = new ethers.utils.Interface(ERC20_MINIMAL_ABI);
+    const multicall  = new ethers.Contract(MULTICALL_ADDRESS, [
+        {
+            "inputs": [{"components": [{"name": "target","type": "address"},{"name": "allowFailure","type": "bool"},{"name": "callData","type": "bytes"}],"name": "calls","type": "tuple[]"}],
+            "name": "aggregate3",
+            "outputs": [{"components": [{"name": "success","type": "bool"},{"name": "returnData","type": "bytes"}],"type": "tuple[]"}],
+            "stateMutability": "view",
+            "type": "function"
+        }
+    ], readProvider);
+
+    const calls = validTokens.map(tok => ({
+        target: tokenAddresses[tok.key],
+        allowFailure: true,
+        callData: erc20Iface.encodeFunctionData('balanceOf', [walletAddr])
+    }));
+
+    let results = [];
+    try {
+        results = await multicall.aggregate3(calls);
+    } catch (e) {
+        console.warn('[Timelock] wallet multicall failed:', e);
+    }
+
+    let rows = '';
+    for (let i = 0; i < validTokens.length; i++) {
+        const tok = validTokens[i];
+        const decimals = DECIMALS_MAP[tok.key] ?? 18;
+        try {
+            const res = results[i];
+            if (!res || !res.success || res.returnData === '0x') throw new Error('bad');
+            const [rawBal] = erc20Iface.decodeFunctionResult('balanceOf', res.returnData);
+            const display = parseFloat(ethers.utils.formatUnits(rawBal, decimals));
+            rows += `<div class="timelock-token-bal-row ${rawBal.gt(0) ? 'has-balance' : ''}">
+                <span class="timelock-token-sym">${tok.symbol}</span>
+                <span class="timelock-token-amt">${fmt(display)}</span>
+            </div>`;
+        } catch {
+            rows += `<div class="timelock-token-bal-row">
+                <span class="timelock-token-sym">${tok.symbol}</span>
+                <span class="timelock-token-amt" style="color:#888">—</span>
+            </div>`;
+        }
+    }
+    container.innerHTML = rows || '<span style="color:#aaa">No balances found.</span>';
+}
+
+/**
+ * Reads the selected/custom token's wallet balance and fills the amount input.
+ */
+export async function setMaxDepositAmount() {
+    const customInput = document.getElementById('timelock-token-deposit-custom');
+    const customAddr  = customInput?.value?.trim();
+    const tokenSelect = document.getElementById('timelock-token-deposit-select');
+    const amountInput = document.getElementById('timelock-token-deposit-amount');
+
+    const tokenAddr = (customAddr && ethers.utils.isAddress(customAddr))
+        ? ethers.utils.getAddress(customAddr)
+        : tokenSelect?.value;
+
+    if (!tokenAddr || !ethers.utils.isAddress(tokenAddr)) {
+        showButtonToast('error', 'No Token', 'Select a token or enter a custom ERC-20 address first.');
+        return;
+    }
+    if (!window.userAddress) {
+        showButtonToast('error', 'Not Connected', 'Connect your wallet first.');
+        return;
+    }
+
+    try {
+        const rpcUrl = (typeof window.customRPC !== 'undefined' && window.customRPC)
+            ? window.customRPC : 'https://mainnet.base.org';
+        const readProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+        const tokenContract = new ethers.Contract(tokenAddr, ERC20_MINIMAL_ABI, readProvider);
+        const [rawBal, decimals] = await Promise.all([
+            tokenContract.balanceOf(window.userAddress),
+            tokenContract.decimals()
+        ]);
+        const formatted = ethers.utils.formatUnits(rawBal, decimals);
+        if (amountInput) amountInput.value = formatted;
+    } catch (e) {
+        console.error('[Timelock] setMaxDepositAmount error:', e);
+        showButtonToast('error', 'Error', 'Could not fetch wallet balance for this token.');
+    }
 }
 
 // ============================================
