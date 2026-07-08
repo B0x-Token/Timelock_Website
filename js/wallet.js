@@ -617,6 +617,9 @@ export async function connectWallet(resumeFromStep = null) {
             if (window.updatePositionInfoDecrease) {
                 window.updatePositionInfoDecrease();
             }
+            if (window.Timelock && typeof window.Timelock.loadTimelockPage === 'function') {
+                window.Timelock.loadTimelockPage();
+            }
 
         // Release connection lock on success
         isConnecting = false;

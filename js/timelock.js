@@ -526,7 +526,7 @@ export async function loadUserVaults() {
     _updateMasqueradeBanner();
 
     try {
-        const provider = window.provider || new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
+        const provider = new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
         const factoryContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, provider);
 
         const vaultCount = (await factoryContract.getVaultCount(targetAddress)).toNumber();
@@ -677,7 +677,7 @@ async function searchVaultByAddress(vaultAddress) {
     container.innerHTML = '<p style="color:#aaa">Checking vault...</p>';
 
     try {
-        const provider = window.provider || new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
+        const provider = new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
         const vaultContract = new ethers.Contract(vaultAddress, TIMELOCK_VAULT_ABI, provider);
 
         let owner;
@@ -842,7 +842,7 @@ async function refreshVaultStatus(vaultAddress) {
     if (!statusEl) return;
 
     try {
-        const provider = window.provider || new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
+        const provider = new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
         const vault = new ethers.Contract(vaultAddress, TIMELOCK_VAULT_ABI, provider);
         const [locked, secsLeft, unlockTime, nftIds] = await Promise.all([
             vault.isLocked(),

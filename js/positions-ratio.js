@@ -2178,7 +2178,12 @@ export async function getCreatePosition() {
         await getTokenIDsOwnedByMetamask(true);
         if (window.checkAdminAccess) await window.checkAdminAccess();
         await loadPositionsIntoDappSelections();
-        if (window.Timelock) window.Timelock.renderAllowedNFTs();
+        if (window.Timelock) {
+            window.Timelock.renderAllowedNFTs();
+            if (typeof window.Timelock.refreshSelectedVault === 'function') {
+                await window.Timelock.refreshSelectedVault();
+            }
+        }
 
     } catch (error) {
         console.error(`Error create Position:`, error);
