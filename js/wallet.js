@@ -1003,6 +1003,21 @@ export async function setupWalletListeners() {
                 window.triggerRefresh();
             }
 
+            // Reload Timelock vaults for the new account so the old account's
+            // vaults (and any selected vault's actions panel) don't linger.
+            if (window.Timelock) {
+                try {
+                    if (typeof window.Timelock.resetVaultSelection === 'function') {
+                        window.Timelock.resetVaultSelection();
+                    }
+                    if (typeof window.Timelock.loadUserVaults === 'function') {
+                        await window.Timelock.loadUserVaults();
+                    }
+                } catch (e) {
+                    console.warn('Failed to reload Timelock vaults on account change:', e);
+                }
+            }
+
             // Show loading state for position selectors during account change
             if (window.setIsInitialPositionLoad) {
                 window.setIsInitialPositionLoad(true);

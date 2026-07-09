@@ -34,6 +34,7 @@ import {
 } from './ui.js';
 
 import { positionData, stakingPositionData } from './positions.js';
+import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // ============================================
 // CONFIGURATION
@@ -41,11 +42,11 @@ import { positionData, stakingPositionData } from './positions.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0x75a1c3e0Fc19Ca340441c52eaA3a503cdE5efbCd";
+export const TIMELOCK_FACTORY_ADDRESS = "0xdc4E4C948945788826bc77d3eb4007f3081c004a";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
-0x75a1c3e0Fc19Ca340441c52eaA3a503cdE5efbCd
+
 // Must match the factory's MAX_PAGE_SIZE constant.
-const VAULT_PAGE_SIZE = 100;
+const VAULT_PAGE_SIZE = 200;
 // ============================================
 // ABIs
 // ============================================
@@ -92,6 +93,27 @@ const TIMELOCK_FACTORY_ABI = [
         ],
         "name": "VaultCreated",
         "type": "event"
+    },
+    {
+        "inputs": [{ "internalType": "address payable", "name": "vault", "type": "address" }],
+        "name": "computeVaultMetric",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "address", "name": "user", "type": "address" },
+            { "internalType": "uint256", "name": "start", "type": "uint256" },
+            { "internalType": "uint256", "name": "count", "type": "uint256" }
+        ],
+        "name": "getVaultsB0xShares",
+        "outputs": [
+            { "internalType": "address[]", "name": "vaults", "type": "address[]" },
+            { "internalType": "uint256[]", "name": "amounts", "type": "uint256[]" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
     }
 ];
 
@@ -129,6 +151,26 @@ const TIMELOCK_VAULT_ABI = [
         "inputs": [],
         "name": "getStakedTokenIds",
         "outputs": [{ "internalType": "uint256[]", "name": "", "type": "uint256[]" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "stakedTokenCount",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "uint256", "name": "offset", "type": "uint256" },
+            { "internalType": "uint256", "name": "limit", "type": "uint256" }
+        ],
+        "name": "getStakedTokenIdsPaged",
+        "outputs": [
+            { "internalType": "uint256[]", "name": "page", "type": "uint256[]" },
+            { "internalType": "uint256", "name": "total", "type": "uint256" }
+        ],
         "stateMutability": "view",
         "type": "function"
     },
@@ -345,6 +387,107 @@ function isFactoryDeployed() {
     return TIMELOCK_FACTORY_ADDRESS !== "0x0000000000000000000000000000000000000000";
 }
 
+// Renders the "Loading vaults..." progress line as a percentage + fraction
+// instead of a bare spinner-less message, e.g. "10% (10/100 vaults loaded)".
+function renderVaultLoadProgress(container, loaded, total) {
+    if (!container) return;
+    const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+    container.innerHTML = `<p style="color:#aaa">Loading vaults... ${pct}% (${loaded}/${total} vaults loaded)</p>`;
+}
+
+// ============================================
+// RPC PROVIDER RESOLUTION
+// ============================================
+
+// Tenderly's public Base gateway is tested exactly once (on first read call);
+// if it responds we use it for every Timelock RPC call for the rest of the
+// session, otherwise we fall back to window.customRPC / the default Base RPC
+// and stick with that — no re-probing on later calls.
+const TENDERLY_PUBLIC_RPC = 'https://gateway.tenderly.co/public/base';
+
+let _timelockRpcUrl = null;
+let _timelockRpcResolving = null;
+
+async function resolveTimelockRpcUrl() {
+    if (_timelockRpcUrl) return _timelockRpcUrl;
+    if (_timelockRpcResolving) return _timelockRpcResolving;
+
+    const fallbackUrl = window.customRPC || 'https://mainnet.base.org';
+
+    _timelockRpcResolving = (async () => {
+        try {
+            const testProvider = new ethers.providers.JsonRpcProvider(TENDERLY_PUBLIC_RPC);
+            await testProvider.getBlockNumber();
+            _timelockRpcUrl = TENDERLY_PUBLIC_RPC;
+        } catch (e) {
+            console.warn('[Timelock] Tenderly public RPC test failed, falling back:', e);
+            _timelockRpcUrl = fallbackUrl;
+        }
+        return _timelockRpcUrl;
+    })();
+
+    return _timelockRpcResolving;
+}
+
+async function getTimelockProvider() {
+    const url = await resolveTimelockRpcUrl();
+    return new ethers.providers.JsonRpcProvider(url);
+}
+
+// ============================================
+// RPC RETRY / BACKOFF
+// ============================================
+
+// Generic exponential-backoff retry for read-only RPC calls. Centralizing
+// this here means every Timelock view call gets the same resilience without
+// hand-rolling a retry loop at each site — important once VAULT_PAGE_SIZE is
+// turned down (more, smaller batches means more RPC round trips, and more
+// chances to hit a public RPC's rate limit).
+const RPC_RETRY_MAX_ATTEMPTS = 8;
+const RPC_RETRY_BASE_DELAY_MS = 500;
+const RPC_RETRY_MAX_DELAY_MS = 15000;
+
+// Enforced after every successful RPC call (on top of the backoff on
+// failures below) so consecutive calls never fire back-to-back, however
+// tight the loop calling withRpcRetry is.
+const RPC_CALL_PACING_MS = 500;
+
+async function withRpcRetry(fn, label = 'RPC call', maxAttempts = RPC_RETRY_MAX_ATTEMPTS) {
+    let lastErr;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            const result = await fn();
+            await sleep(RPC_CALL_PACING_MS);
+            return result;
+        } catch (err) {
+            lastErr = err;
+            if (attempt === maxAttempts - 1) break;
+            const backoff = Math.min(RPC_RETRY_BASE_DELAY_MS * Math.pow(2, attempt), RPC_RETRY_MAX_DELAY_MS);
+            const jitter = backoff * 0.25 * Math.random();
+            console.warn(`[Timelock] ${label} failed (attempt ${attempt + 1}/${maxAttempts}), retrying in ${Math.round(backoff + jitter)}ms:`, err);
+            await sleep(backoff + jitter);
+        }
+    }
+    throw lastErr;
+}
+
+// Fetches every staked token ID from a vault via stakedTokenCount() +
+// getStakedTokenIdsPaged(), VAULT_PAGE_SIZE (100) at a time, instead of the
+// unbounded getStakedTokenIds() — so a vault with hundreds/thousands of
+// staked NFTs can't blow up a single RPC call.
+async function fetchAllStakedTokenIds(vaultContract) {
+    const total = (await withRpcRetry(() => vaultContract.stakedTokenCount(), 'stakedTokenCount')).toNumber();
+    const ids = [];
+    for (let offset = 0; offset < total; offset += VAULT_PAGE_SIZE) {
+        const [page] = await withRpcRetry(
+            () => vaultContract.getStakedTokenIdsPaged(offset, VAULT_PAGE_SIZE),
+            `getStakedTokenIdsPaged(offset=${offset})`
+        );
+        ids.push(...page.map(id => id.toString()));
+    }
+    return ids;
+}
+
 // ============================================
 // LOAD PAGE
 // ============================================
@@ -398,6 +541,17 @@ export async function setMasquerade() {
     } finally {
         clearButtonToastAnchor();
     }
+}
+
+/**
+ * Clears the selected vault and hides its actions panel — used when the
+ * connected account changes so a previously selected vault (belonging to
+ * the old account) isn't left showing stake/withdraw/transfer controls.
+ */
+export function resetVaultSelection() {
+    selectedVaultAddress = null;
+    const panel = document.getElementById('timelock-vault-actions');
+    if (panel) panel.style.display = 'none';
 }
 
 /**
@@ -526,39 +680,30 @@ export async function loadUserVaults() {
     _updateMasqueradeBanner();
 
     try {
-        const provider = new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
+        const provider = await getTimelockProvider();
         const factoryContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, provider);
 
-        const vaultCount = (await factoryContract.getVaultCount(targetAddress)).toNumber();
+        const vaultCount = (await withRpcRetry(() => factoryContract.getVaultCount(targetAddress), 'getVaultCount')).toNumber();
         if (myGeneration !== loadGeneration) return; // a direct-address search superseded this load
 
         const vaultAddresses = [];
-        var MAX_ATTEMPTS = 20;
+        // vault address -> B0x-denominated staked amount, computed on-chain in
+        // one call per page (getVaultsB0xShares) instead of a per-vault
+        // getIDSofStakedTokensForUserwithMinimum + NFT-position decode.
+        const b0xStakedByVault = new Map();
         for (let start = 0; start < vaultCount; start += VAULT_PAGE_SIZE) {
             if (myGeneration !== loadGeneration) return;
 
-               let attempt = 0;
-                let page;
-
-                while (true) {
-                    await sleep(600);
-                    if (myGeneration !== loadGeneration) return;
-                    try {
-                        page = await factoryContract.getVaults(targetAddress, start, VAULT_PAGE_SIZE);
-                        break; // success — exit retry loop, keep `start` moving via outer for-loop
-                    } catch (err) {
-                        console.log("ERROR IN LOOP FOR GETVAULTS", err);
-                        attempt++;
-                        if (attempt >= MAX_ATTEMPTS) {
-                            throw new Error(`getVaults failed at start=${start} after ${attempt} attempts: ${err.message}`);
-                        }
-                        await sleep(600 * attempt); // backoff
-                        if (myGeneration !== loadGeneration) return;
-                    }
-                }
+            const [page, amounts] = await withRpcRetry(
+                () => factoryContract.getVaultsB0xShares(targetAddress, start, VAULT_PAGE_SIZE),
+                `getVaultsB0xShares(start=${start})`
+            );
 
             if (myGeneration !== loadGeneration) return;
             vaultAddresses.push(...page);
+            for (let i = 0; i < page.length; i++) {
+                b0xStakedByVault.set(page[i].toLowerCase(), parseFloat(ethers.utils.formatUnits(amounts[i], 18)));
+            }
         }
 
         if (myGeneration !== loadGeneration) return;
@@ -572,9 +717,11 @@ export async function loadUserVaults() {
             return;
         }
 
+        renderVaultLoadProgress(container, 0, vaultAddresses.length);
+
         const vaultInterface = new ethers.utils.Interface(TIMELOCK_VAULT_ABI);
         const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, provider);
-        const DETAIL_CALLS_PER_VAULT = 4; // unlockTime, isLocked, secondsUntilUnlock, getStakedTokenIds
+        const DETAIL_CALLS_PER_VAULT = 5; // unlockTime, isLocked, secondsUntilUnlock, stakedTokenCount, getStakedTokenIdsPaged(0, VAULT_PAGE_SIZE)
 
         const loadedVaults = [];
         // Batch in the same page size as the address pagination above, so a
@@ -589,57 +736,91 @@ export async function loadUserVaults() {
                     { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('unlockTime') },
                     { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('isLocked') },
                     { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('secondsUntilUnlock') },
-                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('getStakedTokenIds') }
+                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('stakedTokenCount') },
+                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('getStakedTokenIdsPaged', [0, VAULT_PAGE_SIZE]) }
                 );
             }
 
-            let results = null;
-            const MULTICALL_MAX_ATTEMPTS = 15;
-            const MULTICALL_MAX_BACKOFF_MS = 20000; // cap so 15 retries doesn't balloon into a multi-hour wait
-            for (let attempt = 0; attempt < MULTICALL_MAX_ATTEMPTS; attempt++) {
-                await sleep(Math.min(600 * Math.pow(2, attempt), MULTICALL_MAX_BACKOFF_MS));
-                if (myGeneration !== loadGeneration) return;
-                try {
-                    results = await multicallContract.aggregate3(calls);
-                    break;
-                } catch (e) {
-                    console.warn(`Multicall failed for vaults [${batchStart}, ${batchStart + batchAddrs.length}) attempt ${attempt + 1}/${MULTICALL_MAX_ATTEMPTS}:`, e);
-                }
-            }
-            if (myGeneration !== loadGeneration) return;
-            if (!results) {
-                console.warn(`Multicall gave up for vaults [${batchStart}, ${batchStart + batchAddrs.length}) after ${MULTICALL_MAX_ATTEMPTS} attempts`);
+            let results;
+            try {
+                results = await withRpcRetry(
+                    () => multicallContract.aggregate3(calls),
+                    `multicall aggregate3 [${batchStart}, ${batchStart + batchAddrs.length})`
+                );
+            } catch (e) {
+                console.warn(`Multicall gave up for vaults [${batchStart}, ${batchStart + batchAddrs.length}) after ${RPC_RETRY_MAX_ATTEMPTS} attempts:`, e);
                 results = calls.map(() => ({ success: false, returnData: '0x' }));
             }
+            if (myGeneration !== loadGeneration) return;
 
             for (let i = 0; i < batchAddrs.length; i++) {
                 const addr = batchAddrs[i];
-                const [unlockTimeRes, lockedRes, secsLeftRes, nftIdsRes] = results.slice(
+                const totalB0xStaked = b0xStakedByVault.get(addr.toLowerCase()) || 0;
+                const [unlockTimeRes, lockedRes, secsLeftRes, countRes, nftIdsRes] = results.slice(
                     i * DETAIL_CALLS_PER_VAULT, i * DETAIL_CALLS_PER_VAULT + DETAIL_CALLS_PER_VAULT
                 );
 
-                if (!unlockTimeRes.success || !lockedRes.success || !secsLeftRes.success || !nftIdsRes.success) {
+                if (!unlockTimeRes.success || !lockedRes.success || !secsLeftRes.success || !countRes.success || !nftIdsRes.success) {
                     console.warn(`Failed to load vault ${addr} via multicall`);
-                    loadedVaults.push({ address: addr, unlockTime: '0', isLocked: false, secondsLeft: 0, stakedTokenIds: [] });
+                    loadedVaults.push({ address: addr, unlockTime: '0', isLocked: false, secondsLeft: 0, stakedTokenIds: [], _stakedTokenTotal: 0, totalB0xStaked });
                     continue;
                 }
 
                 const [unlockTime] = vaultInterface.decodeFunctionResult('unlockTime', unlockTimeRes.returnData);
                 const [locked] = vaultInterface.decodeFunctionResult('isLocked', lockedRes.returnData);
                 const [secsLeft] = vaultInterface.decodeFunctionResult('secondsUntilUnlock', secsLeftRes.returnData);
-                const [nftIds] = vaultInterface.decodeFunctionResult('getStakedTokenIds', nftIdsRes.returnData);
+                const [totalStaked] = vaultInterface.decodeFunctionResult('stakedTokenCount', countRes.returnData);
+                const [firstPage] = vaultInterface.decodeFunctionResult('getStakedTokenIdsPaged', nftIdsRes.returnData);
 
                 loadedVaults.push({
                     address: addr,
                     unlockTime: unlockTime.toString(),
                     isLocked: locked,
                     secondsLeft: secsLeft.toNumber(),
-                    stakedTokenIds: nftIds.map(id => id.toString())
+                    stakedTokenIds: firstPage.map(id => id.toString()),
+                    _stakedTokenTotal: totalStaked.toNumber(),
+                    totalB0xStaked
                 });
             }
+
+            if (myGeneration !== loadGeneration) return;
+            renderVaultLoadProgress(container, loadedVaults.length, vaultAddresses.length);
         }
 
         if (myGeneration !== loadGeneration) return;
+
+        // Almost every vault has under VAULT_PAGE_SIZE staked NFTs, so the single
+        // multicall page above already has the full list. For the rare vault that
+        // has more, page through the rest with getStakedTokenIdsPaged rather than
+        // ever issuing one unbounded getStakedTokenIds() RPC call.
+        for (const vault of loadedVaults) {
+            var sizeToGet = VAULT_PAGE_SIZE/2;
+            if(sizeToGet<1){
+                sizeToGet=1;
+            }
+            if (myGeneration !== loadGeneration) return;
+            if (vault._stakedTokenTotal <= vault.stakedTokenIds.length) continue;
+
+            const vaultContract = new ethers.Contract(vault.address, TIMELOCK_VAULT_ABI, provider);
+            for (let offset = vault.stakedTokenIds.length; offset < vault._stakedTokenTotal; offset += sizeToGet) {
+                if (myGeneration !== loadGeneration) return;
+                const [page] = await withRpcRetry(
+                    () => vaultContract.getStakedTokenIdsPaged(offset, sizeToGet),
+                    `getStakedTokenIdsPaged(${vault.address}, offset=${offset})`
+                );
+                vault.stakedTokenIds.push(...page.map(id => id.toString()));
+            }
+        }
+        loadedVaults.forEach(v => delete v._stakedTokenTotal);
+
+        // 1) Most B0x staked first.
+        // 2) Tiebreaker: soonest to unlock first.
+        loadedVaults.sort((a, b) => {
+            const b0xDiff = b.totalB0xStaked - a.totalB0xStaked;
+            if (b0xDiff !== 0) return b0xDiff;
+            return a.secondsLeft - b.secondsLeft;
+        });
+
         userVaults = loadedVaults;
         renderVaultCards(container);
     } catch (err) {
@@ -677,12 +858,14 @@ async function searchVaultByAddress(vaultAddress) {
     container.innerHTML = '<p style="color:#aaa">Checking vault...</p>';
 
     try {
-        const provider = new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
+        const provider = await getTimelockProvider();
         const vaultContract = new ethers.Contract(vaultAddress, TIMELOCK_VAULT_ABI, provider);
 
         let owner;
         try {
-            owner = await vaultContract.owner();
+            // Fewer attempts here — a bad address should fail fast, not take
+            // the full backoff ladder before telling the user it's invalid.
+            owner = await withRpcRetry(() => vaultContract.owner(), 'owner', 3);
         } catch (e) {
             if (myGeneration !== loadGeneration) return;
             container.innerHTML = `<p style="color:#e55">${vaultAddress} is not a valid TimeLock vault.</p>`;
@@ -695,12 +878,14 @@ async function searchVaultByAddress(vaultAddress) {
             return;
         }
 
-        const [unlockTime, locked, secsLeft, nftIds] = await Promise.all([
-            vaultContract.unlockTime(),
-            vaultContract.isLocked(),
-            vaultContract.secondsUntilUnlock(),
-            vaultContract.getStakedTokenIds()
+        const [unlockTime, locked, secsLeft] = await Promise.all([
+            withRpcRetry(() => vaultContract.unlockTime(), 'unlockTime'),
+            withRpcRetry(() => vaultContract.isLocked(), 'isLocked'),
+            withRpcRetry(() => vaultContract.secondsUntilUnlock(), 'secondsUntilUnlock')
         ]);
+        if (myGeneration !== loadGeneration) return;
+
+        const stakedTokenIds = await fetchAllStakedTokenIds(vaultContract);
         if (myGeneration !== loadGeneration) return;
 
         userVaults = [{
@@ -708,7 +893,7 @@ async function searchVaultByAddress(vaultAddress) {
             unlockTime: unlockTime.toString(),
             isLocked: locked,
             secondsLeft: secsLeft.toNumber(),
-            stakedTokenIds: nftIds.map(id => id.toString())
+            stakedTokenIds
         }];
         singleVaultView = true;
         renderVaultCards(container);
@@ -789,6 +974,7 @@ function renderVaultCards(container) {
             </div>
             <div class="timelock-vault-detail">Unlocks: ${formatUnlockTime(vault.unlockTime)}</div>
             <div class="timelock-vault-detail">NFTs in Vault: ${stakedList}</div>
+            <div class="timelock-vault-detail">B0x Staked: ${(vault.totalB0xStaked || 0).toFixed(4)}</div>
             <button class="btn-primary timelock-select-btn" onclick="Timelock.selectVault('${vault.address}')">
                 ${selectedVaultAddress === vault.address ? 'Selected' : 'Select Vault'}
             </button>
@@ -842,16 +1028,15 @@ async function refreshVaultStatus(vaultAddress) {
     if (!statusEl) return;
 
     try {
-        const provider = new ethers.providers.JsonRpcProvider(window.customRPC || "https://mainnet.base.org");
+        const provider = await getTimelockProvider();
         const vault = new ethers.Contract(vaultAddress, TIMELOCK_VAULT_ABI, provider);
-        const [locked, secsLeft, unlockTime, nftIds] = await Promise.all([
-            vault.isLocked(),
-            vault.secondsUntilUnlock(),
-            vault.unlockTime(),
-            vault.getStakedTokenIds()
+        const [locked, secsLeft, unlockTime] = await Promise.all([
+            withRpcRetry(() => vault.isLocked(), 'isLocked'),
+            withRpcRetry(() => vault.secondsUntilUnlock(), 'secondsUntilUnlock'),
+            withRpcRetry(() => vault.unlockTime(), 'unlockTime')
         ]);
 
-        const stakedIds = nftIds.map(id => id.toString());
+        const stakedIds = await fetchAllStakedTokenIds(vault);
 
         const lockText = locked
             ? `<span style="color:#f0a500">Locked — ${formatCountdown(secsLeft.toNumber())} remaining</span>`
@@ -874,6 +1059,13 @@ async function populateNFTSelectors(vaultAddress) {
         if (entries.length === 0) {
             stakeSelect.innerHTML = '<option value="">No eligible positions found</option>';
         } else {
+            // Most B0x staked first, so users can easily deposit their most valuable position first.
+            const getB0xAmount = (pos) => {
+                if (pos.tokenA === 'B0x') return parseFloat(pos.currentTokenA) || 0;
+                if (pos.tokenB === 'B0x') return parseFloat(pos.currentTokenB) || 0;
+                return 0;
+            };
+            entries.sort((a, b) => getB0xAmount(b) - getB0xAmount(a));
             stakeSelect.innerHTML = entries.map(pos => {
                 const tokenId = pos.id.split('_')[1];
                 const a = pos.currentTokenA ? Number(pos.currentTokenA).toFixed(4) : '0';
@@ -901,17 +1093,15 @@ async function populateNFTSelectors(vaultAddress) {
     const withdrawTokenSelect = document.getElementById('timelock-token-withdraw-select');
     if (withdrawTokenSelect) withdrawTokenSelect.innerHTML = withdrawOptions;
 
-    // Populate "withdraw NFT" dropdown from vault's own getStakedTokenIds()
+    // Populate "withdraw NFT" dropdown from vault's own staked token list
     // — must be vault-specific so we don't show NFTs staked directly (not through this vault)
     const withdrawSelect = document.getElementById('timelock-staked-nft-select');
     if (withdrawSelect) {
         withdrawSelect.innerHTML = '<option value="">Loading vault NFTs...</option>';
         try {
-            const rpcUrl = (typeof window.customRPC !== 'undefined' && window.customRPC)
-                ? window.customRPC : 'https://mainnet.base.org';
-            const readProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+            const readProvider = await getTimelockProvider();
             const vaultContract = new ethers.Contract(vaultAddress, TIMELOCK_VAULT_ABI, readProvider);
-            const stakedIds = await vaultContract.getStakedTokenIds();
+            const stakedIds = await fetchAllStakedTokenIds(vaultContract);
             if (stakedIds.length === 0) {
                 withdrawSelect.innerHTML = '<option value="">No NFTs staked in this vault</option>';
             } else {
@@ -981,12 +1171,15 @@ async function populateNFTSelectors(vaultAddress) {
 
                 // Query LP pool staked positions (NFT staked into LP pool through vault)
                 try {
-                    const result = await positionFinder.getIDSofStakedTokensForUserwithMinimum(
-                        vaultAddress,
-                        tokenAddresses['B0x'],
-                        tokenAddresses['0xBTC'],
-                        0, 0, 50,
-                        hookAddress
+                    const result = await withRpcRetry(
+                        () => positionFinder.getIDSofStakedTokensForUserwithMinimum(
+                            vaultAddress,
+                            tokenAddresses['B0x'],
+                            tokenAddresses['0xBTC'],
+                            0, 0, 50,
+                            hookAddress
+                        ),
+                        'getIDSofStakedTokensForUserwithMinimum'
                     );
                     for (let i = 0; i < result[0].length; i++) {
                         const tid = result[0][i].toString();
@@ -1010,13 +1203,16 @@ async function populateNFTSelectors(vaultAddress) {
                 const missingIds = stakedIds.map(id => id.toString().trim()).filter(tid => !vaultPosById[tid]);
                 if (missingIds.length > 0) {
                     try {
-                        const result2 = await positionFinder.findUserTokenIdswithMinimumIndividual(
-                            vaultAddress,
-                            missingIds,
-                            tokenAddresses['B0x'],
-                            tokenAddresses['0xBTC'],
-                            hookAddress,
-                            0
+                        const result2 = await withRpcRetry(
+                            () => positionFinder.findUserTokenIdswithMinimumIndividual(
+                                vaultAddress,
+                                missingIds,
+                                tokenAddresses['B0x'],
+                                tokenAddresses['0xBTC'],
+                                hookAddress,
+                                0
+                            ),
+                            'findUserTokenIdswithMinimumIndividual'
                         );
                         for (let i = 0; i < result2[0].length; i++) {
                             const tid = result2[0][i].toString();
@@ -1038,8 +1234,19 @@ async function populateNFTSelectors(vaultAddress) {
                     }
                 }
 
-                withdrawSelect.innerHTML = stakedIds.map(id => {
-                    const tokenId = id.toString().trim();
+                // Sort by the B0x amount held in each position (highest first) so
+                // users can easily withdraw their most valuable position first.
+                const getB0xAmount = (pos) => {
+                    if (!pos) return 0;
+                    if (pos.tokenA === 'B0x') return parseFloat(pos.currentTokenA) || 0;
+                    if (pos.tokenB === 'B0x') return parseFloat(pos.currentTokenB) || 0;
+                    return 0;
+                };
+                const sortedStakedIds = stakedIds
+                    .map(id => id.toString().trim())
+                    .sort((a, b) => getB0xAmount(vaultPosById[b]) - getB0xAmount(vaultPosById[a]));
+
+                withdrawSelect.innerHTML = sortedStakedIds.map(tokenId => {
                     const pos = vaultPosById[tokenId];
                     const a = pos?.currentTokenA ? Number(pos.currentTokenA).toFixed(4) : '0';
                     const b = pos?.currentTokenB ? Number(pos.currentTokenB).toFixed(4) : '0';
@@ -1050,7 +1257,7 @@ async function populateNFTSelectors(vaultAddress) {
                 }).join('');
             }
         } catch (e) {
-            console.warn('[Timelock] getStakedTokenIds failed:', e);
+            console.warn('[Timelock] fetchAllStakedTokenIds failed:', e);
             withdrawSelect.innerHTML = '<option value="">Could not load vault NFTs</option>';
         }
     }
@@ -1127,22 +1334,38 @@ export async function stakeNFTToVault() {
         return;
     }
 
+    const customStakeId = document.getElementById('timelock-nft-custom-id')?.value?.trim();
+    const tokenId = customStakeId || document.getElementById('timelock-nft-select')?.value;
+    if (!tokenId) {
+        showButtonToast('error', 'No NFT Selected', 'Please select an NFT position to stake or enter a custom Token #.');
+        return;
+    }
+
+    // Anti-spam requires the vault to hold at least 100 B0x, but only when staking
+    // into someone else's vault via masquerade — depositing into your own vault
+    // costs nothing. The position being staked already carries some B0x liquidity,
+    // so we only need to approve the shortfall: 100 minus the B0x already in this
+    // position (shown as "~" since it's an approximate minimum, not an exact figure).
+    const stakePos = positionData[`position_${tokenId}`];
+    let positionB0xAmount = 0;
+    if (stakePos) {
+        if (stakePos.tokenA === 'B0x') positionB0xAmount = parseFloat(stakePos.currentTokenA) || 0;
+        else if (stakePos.tokenB === 'B0x') positionB0xAmount = parseFloat(stakePos.currentTokenB) || 0;
+    }
+    const minB0xNeeded = masqueradeAddress ? Math.max(0, 100 - positionB0xAmount) : 0;
+    const minB0xNeededBN = ethers.utils.parseUnits(minB0xNeeded.toFixed(18), 18);
+
     if (masqueradeAddress) {
         const short = `${masqueradeAddress.slice(0, 10)}...${masqueradeAddress.slice(-8)}`;
         const confirmed = window.confirm(
             `⚠️ Masquerade Mode Active\n\n` +
             `You are currently viewing vaults belonging to:\n${short}\n\n` +
             `Staking an NFT will deposit YOUR NFT into THEIR vault. The NFT and all its contents will be locked under that address until their timelock expires — you will not be able to retrieve it unless you also control that wallet.\n\n` +
+            `Liquidity Pool Amount: ${positionB0xAmount.toFixed(4)} B0x\n` +
+            `Anti-spam fee you must pay: ~${minB0xNeeded.toFixed(4)} B0x\n\n` +
             `Are you sure you want to stake into this vault?`
         );
         if (!confirmed) return;
-    }
-
-    const customStakeId = document.getElementById('timelock-nft-custom-id')?.value?.trim();
-    const tokenId = customStakeId || document.getElementById('timelock-nft-select')?.value;
-    if (!tokenId) {
-        showButtonToast('error', 'No NFT Selected', 'Please select an NFT position to stake or enter a custom Token #.');
-        return;
     }
 
     // Always show a staking confirmation summary
@@ -1154,13 +1377,13 @@ export async function stakeNFTToVault() {
         const daysUntilUnlock = vaultInfo && vaultInfo.secondsLeft > 0
             ? Math.floor(vaultInfo.secondsLeft / 86400)
             : 0;
-        const unlockStr = !vaultInfo || vaultInfo.secondsLeft <= 0
-            ? 'already unlocked'
-            : `${daysUntilUnlock} day${daysUntilUnlock !== 1 ? 's' : ''} from now`;
+        const unlockSentence = !vaultInfo || vaultInfo.secondsLeft <= 0
+            ? 'It is already unlocked to the owner of the contract.'
+            : `It will unlock in ${daysUntilUnlock} day${daysUntilUnlock !== 1 ? 's' : ''} from now to the owner of the contract.`;
         const stakeConfirmed = window.confirm(
             `You are staking Uniswap V4 Liquidity Pool NFT #${tokenId} into a Timelock Contract.\n\n` +
             `This Timelock Contract is owned by ${vaultOwner || 'Unknown'} ${isYou ? '(You)' : '(Not You)'}.\n\n` +
-            `It will unlock in ${unlockStr} to the owner of the contract.`
+            unlockSentence
         );
         if (!stakeConfirmed) return;
     }
@@ -1190,13 +1413,20 @@ export async function stakeNFTToVault() {
     try {
         const nftManager = new ethers.Contract(positionManager_address, NFT_APPROVE_ABI, window.signer);
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
+        const totalSteps = minB0xNeededBN.gt(0) ? 3 : 2;
 
-        showButtonToast('info', 'Step 1/2 — Approve NFT', `Approve NFT #${tokenId} for the vault. Confirm in your wallet.`);
+        showButtonToast('info', `Step 1/${totalSteps} — Approve NFT`, `Approve NFT #${tokenId} for the vault. Confirm in your wallet.`);
         const approveTx = await nftManager.approve(selectedVaultAddress, tokenId);
         await approveTx.wait();
-        showButtonToast('success', 'Approved!', 'Now confirm the stake transaction.');
+        showButtonToast('success', 'Approved!', 'Now confirm the next transaction.');
 
-        showButtonToast('info', 'Step 2/2 — Stake NFT', 'Staking NFT through the vault. Confirm in your wallet.');
+        if (minB0xNeededBN.gt(0)) {
+            showButtonToast('info', `Step 2/${totalSteps} — Approve B0x`, `Approve ~${minB0xNeeded.toFixed(4)} B0x for the vault (anti-spam minimum). Confirm in your wallet.`);
+            await approveIfNeeded(tokenAddresses['B0x'], selectedVaultAddress, minB0xNeededBN);
+            showButtonToast('success', 'Approved!', 'Now confirm the stake transaction.');
+        }
+
+        showButtonToast('info', `Step ${totalSteps}/${totalSteps} — Stake NFT`, 'Staking NFT through the vault. Confirm in your wallet.');
         const stakeTx = await vaultContract.stakeUniswapV4NFT(tokenId);
         await stakeTx.wait();
 
@@ -1245,6 +1475,19 @@ export async function withdrawNFTFromVault() {
         const tx = await vaultContract.withdrawNFT(tokenId);
         await tx.wait();
         showButtonToast('success', 'NFT Withdrawn!', `NFT #${tokenId} has been returned to your wallet.`);
+
+        // Force the background NFT-owner scanner to pick up the returned NFT
+        // immediately, so it shows up in "Eligible NFT Positions" right away
+        // instead of only after a reload (same fix as Create Position).
+        triggerRefresh();
+        let waitedForScan = 0;
+        while (!isSearchingLogs() && waitedForScan < 3000) {
+            await sleep(100);
+            waitedForScan += 100;
+        }
+        if (window.getTokenIDsOwnedByMetamask) await window.getTokenIDsOwnedByMetamask(true);
+        renderAllowedNFTs();
+
         await loadUserVaults();
         await selectVault(selectedVaultAddress);
         await loadVaultTokenBalances(selectedVaultAddress);
@@ -1393,11 +1636,31 @@ export async function transferVaultOwnership() {
         return;
     }
 
+    // The factory charges an anti-spam fee (in B0x) for transferring ownership of
+    // small/low-value vaults, to discourage spamming the vault registry with junk
+    // transfers. computeVaultMetric already returns the fee pre-scaled to wei
+    // (18 decimals) — approve it as-is, don't rescale.
+    let requiredFeeAmount = ethers.BigNumber.from(0);
+    try {
+        const provider = await getTimelockProvider();
+        const factoryContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, provider);
+        const metric = await factoryContract.computeVaultMetric(selectedVaultAddress);
+        requiredFeeAmount = ethers.BigNumber.from(metric);
+    } catch (err) {
+        console.error('computeVaultMetric error:', err);
+        showButtonToast('error', 'Failed', 'Could not compute the anti-spam fee for this vault. Try again.');
+        return;
+    }
+
+    const feeDisplay = ethers.utils.formatUnits(requiredFeeAmount, 18);
     const confirmed = window.confirm(
         `⚠️ WARNING — Permanent Transfer\n\n` +
         `This vault and ALL of its contents (NFTs, tokens, staking positions) will be permanently transferred to:\n\n` +
         `${newOwner}\n\n` +
         `You will have NO way to recover them unless you also control that address. Once confirmed on-chain this action cannot be undone.\n\n` +
+        (requiredFeeAmount.gt(0)
+            ? `This transfer requires approving ${feeDisplay} B0x to the TimeLock Factory as an anti-spam fee (to prevent spam transfers of small accounts).\n\n`
+            : ``) +
         `Are you absolutely sure you want to proceed?`
     );
     if (!confirmed) return;
@@ -1405,6 +1668,11 @@ export async function transferVaultOwnership() {
     disableBtn('timelockTransferOwnerBtn');
 
     try {
+        if (requiredFeeAmount.gt(0)) {
+            showButtonToast('info', 'Approving Fee', `Approving ${feeDisplay} B0x to the TimeLock Factory. Confirm in wallet.`);
+            await approveIfNeeded(tokenAddresses['B0x'], TIMELOCK_FACTORY_ADDRESS, requiredFeeAmount);
+        }
+
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
         showButtonToast('info', 'Transferring Ownership', `Transferring to ${newOwner}. Confirm in wallet.`);
         const tx = await vaultContract.transferOwnership(newOwner);
@@ -1419,6 +1687,18 @@ export async function transferVaultOwnership() {
         enableBtn('timelockTransferOwnerBtn');
     }
     } finally { clearButtonToastAnchor(); }
+}
+
+/**
+ * Approves an ERC-20 spend allowance if the current allowance is insufficient.
+ */
+async function approveIfNeeded(tokenToApprove, spenderAddress, requiredAmount) {
+    const tokenContract = new ethers.Contract(tokenToApprove, ERC20_MINIMAL_ABI, window.signer);
+    const currentAllowance = await tokenContract.allowance(window.userAddress, spenderAddress);
+    if (currentAllowance.lt(requiredAmount)) {
+        const approveTx = await tokenContract.approve(spenderAddress, ethers.constants.MaxUint256);
+        await approveTx.wait();
+    }
 }
 
 // ============================================
@@ -1486,11 +1766,12 @@ export async function depositTokenToVault() {
     let decimals = 18;
     let symbol = tokenAddr.slice(0, 8) + '...';
     try {
-        const readProvider = new ethers.providers.JsonRpcProvider(
-            (typeof window.customRPC !== 'undefined' && window.customRPC) ? window.customRPC : 'https://mainnet.base.org'
-        );
+        const readProvider = await getTimelockProvider();
         const tokenRead = new ethers.Contract(tokenAddr, ERC20_MINIMAL_ABI, readProvider);
-        [decimals, symbol] = await Promise.all([tokenRead.decimals(), tokenRead.symbol()]);
+        [decimals, symbol] = await Promise.all([
+            withRpcRetry(() => tokenRead.decimals(), 'decimals'),
+            withRpcRetry(() => tokenRead.symbol(), 'symbol')
+        ]);
     } catch (e) {
         console.warn('[Timelock] Could not fetch token metadata:', e);
     }
@@ -1576,16 +1857,14 @@ export async function withdrawTokenFromVault() {
     disableBtn('timelockWithdrawTokenBtn');
 
     try {
-        const rpcUrl = (typeof window.customRPC !== 'undefined' && window.customRPC)
-            ? window.customRPC : 'https://mainnet.base.org';
-        const readProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+        const readProvider = await getTimelockProvider();
         const tokenContract = new ethers.Contract(tokenAddr, ERC20_MINIMAL_ABI, readProvider);
         const vaultRead = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, readProvider);
 
         // Pre-checks before sending the transaction
         const [vaultBal, isLocked] = await Promise.all([
-            tokenContract.balanceOf(selectedVaultAddress),
-            vaultRead.isLocked()
+            withRpcRetry(() => tokenContract.balanceOf(selectedVaultAddress), 'balanceOf'),
+            withRpcRetry(() => vaultRead.isLocked(), 'isLocked')
         ]);
         if(tokenAddr != tokenAddresses['WETH']){
         if (vaultBal.isZero()) {
@@ -1596,7 +1875,7 @@ export async function withdrawTokenFromVault() {
         }
     }
         if (isLocked) {
-            const secsLeft = await vaultRead.secondsUntilUnlock();
+            const secsLeft = await withRpcRetry(() => vaultRead.secondsUntilUnlock(), 'secondsUntilUnlock');
             showButtonToast('error', 'Still Locked', `Vault unlocks in ${formatCountdown(secsLeft.toNumber())}. Withdrawals are only allowed after unlock.`);
             enableBtn('timelockWithdrawTokenBtn');
             clearButtonToastAnchor();
@@ -1631,10 +1910,7 @@ export async function loadVaultTokenBalances(vaultAddress) {
     const container = document.getElementById('timelock-token-balances');
     if (!container) return;
 
-    const rpcUrl = (typeof window.customRPC !== 'undefined' && window.customRPC)
-        ? window.customRPC
-        : 'https://mainnet.base.org';
-    const readProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+    const readProvider = await getTimelockProvider();
     const fmt = (n) => {
         if (n === 0) return '0';
         if (n < 0.000001) return n.toExponential(4);
@@ -1668,7 +1944,7 @@ export async function loadVaultTokenBalances(vaultAddress) {
 
     let results = [];
     try {
-        results = await multicall.aggregate3(calls);
+        results = await withRpcRetry(() => multicall.aggregate3(calls), 'multicall balanceOf');
     } catch (e) {
         console.warn('[Timelock] multicall balanceOf failed:', e);
     }
@@ -1718,9 +1994,7 @@ export async function loadWalletDepositBalances() {
         return;
     }
 
-    const rpcUrl = (typeof window.customRPC !== 'undefined' && window.customRPC)
-        ? window.customRPC : 'https://mainnet.base.org';
-    const readProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+    const readProvider = await getTimelockProvider();
 
     const fmt = (n) => {
         if (n === 0) return '0';
@@ -1752,7 +2026,7 @@ export async function loadWalletDepositBalances() {
 
     let results = [];
     try {
-        results = await multicall.aggregate3(calls);
+        results = await withRpcRetry(() => multicall.aggregate3(calls), 'wallet multicall balanceOf');
     } catch (e) {
         console.warn('[Timelock] wallet multicall failed:', e);
     }
@@ -1803,13 +2077,11 @@ export async function setMaxDepositAmount() {
     }
 
     try {
-        const rpcUrl = (typeof window.customRPC !== 'undefined' && window.customRPC)
-            ? window.customRPC : 'https://mainnet.base.org';
-        const readProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+        const readProvider = await getTimelockProvider();
         const tokenContract = new ethers.Contract(tokenAddr, ERC20_MINIMAL_ABI, readProvider);
         const [rawBal, decimals] = await Promise.all([
-            tokenContract.balanceOf(window.userAddress),
-            tokenContract.decimals()
+            withRpcRetry(() => tokenContract.balanceOf(window.userAddress), 'balanceOf'),
+            withRpcRetry(() => tokenContract.decimals(), 'decimals')
         ]);
         const formatted = ethers.utils.formatUnits(rawBal, decimals);
         if (amountInput) amountInput.value = formatted;
