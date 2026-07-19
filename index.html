@@ -793,6 +793,7 @@
                     <div class="info-card3">
                         <div id="timelock-masquerade-banner" style="display:none;margin-bottom:12px;padding:10px 14px;background:#2a200a;border:1px solid #f0a500;border-radius:8px;font-size:0.9em;line-height:1.5"></div>
                         <h2 id="timelock-vaults-heading">Your Timelock Vaults</h2>
+                        <div id="timelock-vaults-total" style="display:none;margin-bottom:12px;font-size:2em;color:#4caf50;font-weight:600"></div>
                         <button class="btn-primary" onclick="Timelock.loadUserVaults()" style="margin-bottom:12px">Refresh Vaults</button>
                         <div id="timelock-vault-search-wrap" style="display:none;margin-bottom:12px">
                             <input type="text" id="timelock-vault-search-input" placeholder="Search by vault address or staked NFT #..." oninput="Timelock.filterVaults(this.value)" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;box-sizing:border-box">
@@ -817,7 +818,7 @@
                             <div id="timelock-stake-masquerade-warning" style="display:none;margin-bottom:12px;padding:10px 14px;background:#3a0a0a;border:1px solid #e55;border-radius:8px;font-size:0.9em;line-height:1.5;color:#f88">
                                 ⚠️ <strong>Masquerade Mode Active</strong> — You are viewing someone else's vault. Staking will deposit <strong>your NFT</strong> into their vault. You will not be able to recover it unless you also control that wallet.
                             </div>
-                            <p>Approves the vault to receive your NFT, then stakes it through the vault to the LP pool. Rewards accumulate to the vault while locked.</p>
+                            <p>Approves the vault to receive your NFT, then stakes it through the vault to the LP pool. Rewards accumulate to the vault while locked. <span id="timelock-stake-masquerade-cost" style="display:none">Costs a minimum of 50 B0x, charges 50 B0x value to stake the NFT for someone else (NFT Value + Your B0x = 50 B0x = Success).</span></p>
                             <div class="form-group">
                                 <label>Select NFT Position to Stake</label>
                                 <select id="timelock-nft-select" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
@@ -830,10 +831,22 @@
                             <button class="btn-success" id="timelockStakeNFTBtn" onclick="Timelock.stakeNFTToVault()">Stake NFT to Vault</button>
                         </div>
 
+                        <!-- Smart Contract Withdrawal -->
+                        <div class="info-card3">
+                            <h2>Smart Contract Withdrawal</h2>
+                            <div id="timelock-smart-withdraw-mismatch-warning" style="display:none;margin-bottom:12px;padding:10px 14px;background:#3a2a0a;border:1px solid #f0a500;border-radius:8px;font-size:0.9em;line-height:1.5;color:#f0a500">
+                                ⚠️ <strong>Position count mismatch</strong> — this vault has fewer NFTs recorded (<span id="timelock-exit-mismatch-timelock-count2">0</span>) than are actually staked in the LP pool (<span id="timelock-exit-mismatch-pool-count2">0</span>). Smart Contract Withdrawal can't reach these — use <strong>this Smart Contract Withdrawl function and/or the Exit All Function below</strong>  to get all positions withdrawn from staking.
+                            </div>
+                            <p style="color:#f0a500">Only available after the vault unlocks. Withdraws the 20 most valuable staked NFTs in one transaction and claims B0x / 0xBTC / WETH rewards for them, returning everything to <span class="timelock-owner-wallet-phrase">your wallet</span>.</p>
+                            <p>Checks the vault's staked-NFT count first. If the vault has 20 or fewer NFTs staked, this one transaction empties it. If it has more (e.g. 40 NFTs), you'll need to run this multiple times — always the 2 most valuable remaining positions each time (40 NFTs = 2 runs).</p>
+                            <div id="timelock-smart-withdraw-status" style="margin-bottom:12px;font-size:0.9em;color:#aaa"></div>
+                            <button class="btn-warning" id="timelockSmartWithdrawBtn" onclick="Timelock.withdrawMultipleNFTsAndERC20sFromVault()">Withdraw 2 Most Valuable NFTs</button>
+                        </div>
+
                         <!-- Withdraw NFT -->
                         <div class="info-card3">
                             <h2>Withdraw NFT from Vault</h2>
-                            <p style="color:#f0a500">Only available after the vault unlocks. Unstakes from LP pool and returns NFT to your wallet.</p>
+                            <p style="color:#f0a500">Only available after the vault unlocks. Unstakes from LP pool and returns NFT to <span class="timelock-owner-wallet-phrase">your wallet</span>.</p>
                             <div class="form-group">
                                 <label>Select Staked NFT to Withdraw</label>
                                 <select id="timelock-staked-nft-select" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
@@ -897,7 +910,7 @@
                         <!-- ERC-20 Withdraw -->
                         <div class="info-card3">
                             <h2>Withdraw ERC-20 Token</h2>
-                            <p style="color:#f0a500">Only available after the vault unlocks. Sends the entire token balance held in the vault back to your wallet.</p>
+                            <p style="color:#f0a500">Only available after the vault unlocks. Sends the entire token balance held in the vault back to <span class="timelock-owner-wallet-phrase">your wallet</span>.</p>
                             <div class="form-group">
                                 <label>Select Token to Withdraw</label>
                                 <select id="timelock-token-withdraw-select" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
@@ -911,10 +924,16 @@
                             <button class="btn-warning" id="timelockWithdrawTokenBtn" onclick="Timelock.withdrawTokenFromVault()">Withdraw Token (After Unlock)</button>
                         </div>
 
-                        <!-- Exit All -->
-                        <div class="info-card3">
+                        <!-- Exit All — hidden when the vault's own staked-NFT count matches the
+                             LP pool's, since Smart Contract Withdrawal already covers that case.
+                             Only shown when Start Index is actually needed to page through the
+                             LP pool's own records. -->
+                        <div class="info-card3" id="timelock-exit-all-section" style="display:none">
                             <h2>Exit All (After Unlock)</h2>
-                            <p style="color:#f0a500">Collects all rewards and exits LP positions. Only available after the vault unlocks.</p>
+                            <p style="color:#f0a500">Collects all rewards and exits LP positions and returns them to <span class="timelock-owner-wallet-phrase">your wallet</span>. Only available after the vault unlocks.</p>
+                            <div style="margin-bottom:12px;padding:10px 14px;background:#3a2a0a;border:1px solid #f0a500;border-radius:8px;font-size:0.9em;line-height:1.5;color:#f0a500">
+                                ⚠️ <strong>Position count mismatch</strong> — this vault has fewer NFTs recorded (<span id="timelock-exit-mismatch-timelock-count">0</span>) than are actually staked in the LP pool (<span id="timelock-exit-mismatch-pool-count">0</span>). Smart Contract Withdrawal can't reach these — use this function to withdraw the LP pool positions and exit so many at a time.
+                            </div>
                             <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
                                 <div class="form-group" style="flex:1;min-width:120px">
                                     <label>Start Index</label>
@@ -931,7 +950,7 @@
                         <!-- Transfer Ownership -->
                         <div class="info-card3">
                             <h2>Transfer Vault Ownership</h2>
-                            <p style="color:#f0a500">Only possible while the vault is still locked. Permanently transfers control to a new address.</p>
+                            <p style="color:#f0a500">Only possible while the vault is still locked. Permanently transfers control to a new address. Costs a minimum of 50 B0x Total Value per Staked NFT positions in the timelock. (50 B0x * # NFTs) = (Your B0x needed + NFT B0x Value) = Success</p>
                             <div class="form-group">
                                 <label>New Owner Address</label>
                                 <input type="text" id="timelock-new-owner-input" placeholder="0x..." style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">

@@ -14,6 +14,7 @@ import {
     positionManager_address,
     tokenAddresses,
     contractAddress_PositionFinderPro,
+    contractAddress_Swapper,
     hookAddress,
     MULTICALL_ADDRESS,
     WETHbase
@@ -42,11 +43,11 @@ import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0xdc4E4C948945788826bc77d3eb4007f3081c004a";
+export const TIMELOCK_FACTORY_ADDRESS = "0x9736fbA73291d884a4aED3D1eb061aC0BBDe65e6";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 
 // Must match the factory's MAX_PAGE_SIZE constant.
-const VAULT_PAGE_SIZE = 200;
+const VAULT_PAGE_SIZE = 100;
 // ============================================
 // ABIs
 // ============================================
@@ -241,9 +242,20 @@ const TIMELOCK_VAULT_ABI = [
     {
         "inputs": [
             { "internalType": "uint256", "name": "startIndex", "type": "uint256" },
-            { "internalType": "uint256", "name": "Count", "type": "uint256" }
+            { "internalType": "uint256", "name": "Count", "type": "uint256" },
+            { "internalType": "address[]", "name": "additionalERC20s", "type": "address[]" }
         ],
         "name": "exitAllTogether",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]" },
+            { "internalType": "IERC20[]", "name": "ERC20sToGetRewardAndWithdraw", "type": "address[]" }
+        ],
+        "name": "withdraw_Multiple_NFTs_And_ERC20s",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -280,6 +292,26 @@ const MULTICALL3_ABI = [{
         "name": "returnData",
         "type": "tuple[]"
     }],
+    "stateMutability": "view",
+    "type": "function"
+}];
+
+// Minimal Swapper ABI — just enough to read the current B0x/0xBTC pool price
+// ratio for the "Total 0xBTC Staked" conversion below.
+const SWAPPER_PRICE_RATIO_ABI = [{
+    "inputs": [
+        { "internalType": "address", "name": "token", "type": "address" },
+        { "internalType": "address", "name": "token2", "type": "address" },
+        { "internalType": "address", "name": "hookAddress", "type": "address" }
+    ],
+    "name": "getPriceRatio",
+    "outputs": [
+        { "internalType": "uint256", "name": "ratio", "type": "uint256" },
+        { "internalType": "address", "name": "token0z", "type": "address" },
+        { "internalType": "address", "name": "token1z", "type": "address" },
+        { "internalType": "uint8", "name": "token0decimals", "type": "uint8" },
+        { "internalType": "uint8", "name": "token1decimals", "type": "uint8" }
+    ],
     "stateMutability": "view",
     "type": "function"
 }];
@@ -435,6 +467,54 @@ async function getTimelockProvider() {
 }
 
 // ============================================
+// B0x/0xBTC PRICE RATIO (for the "Total 0xBTC Staked" display)
+// ============================================
+
+// Fetched once per page load via Multicall3 and cached — the ratio doesn't
+// move fast enough to justify re-fetching on every vault refresh, and this
+// way the Timelock tab doesn't depend on window.ratioz having already been
+// populated by the swap/positions widgets elsewhere in the app.
+let _cachedPriceRatio = null;
+let _priceRatioFetching = null;
+
+async function fetchPriceRatioOnce() {
+    if (_cachedPriceRatio) return _cachedPriceRatio;
+    if (_priceRatioFetching) return _priceRatioFetching;
+
+    _priceRatioFetching = (async () => {
+        try {
+            const provider = await getTimelockProvider();
+            const swapperInterface = new ethers.utils.Interface(SWAPPER_PRICE_RATIO_ABI);
+            const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, provider);
+
+            const calls = [{
+                target: contractAddress_Swapper,
+                allowFailure: true,
+                callData: swapperInterface.encodeFunctionData('getPriceRatio', [tokenAddresses['B0x'], tokenAddresses['0xBTC'], hookAddress])
+            }];
+
+            const results = await withRpcRetry(() => multicallContract.aggregate3(calls), 'multicall getPriceRatio');
+            if (!results[0].success) {
+                console.warn('[Timelock] getPriceRatio call failed');
+                return null;
+            }
+
+            const decoded = swapperInterface.decodeFunctionResult('getPriceRatio', results[0].returnData);
+            _cachedPriceRatio = decoded[0];
+            window.ratioz = _cachedPriceRatio; // shared global other widgets already read
+            return _cachedPriceRatio;
+        } catch (err) {
+            console.error('[Timelock] fetchPriceRatioOnce error:', err);
+            return null;
+        } finally {
+            _priceRatioFetching = null;
+        }
+    })();
+
+    return _priceRatioFetching;
+}
+
+// ============================================
 // RPC RETRY / BACKOFF
 // ============================================
 
@@ -580,6 +660,7 @@ function _updateMasqueradeBanner() {
     const banner = document.getElementById('timelock-masquerade-banner');
     const heading = document.getElementById('timelock-vaults-heading');
     const stakeWarning = document.getElementById('timelock-stake-masquerade-warning');
+    const stakeCost = document.getElementById('timelock-stake-masquerade-cost');
 
     if (masqueradeAddress) {
         const short = `${masqueradeAddress.slice(0, 10)}...${masqueradeAddress.slice(-8)}`;
@@ -593,10 +674,18 @@ function _updateMasqueradeBanner() {
         }
         if (heading) heading.textContent = `Vaults for ${short}`;
         if (stakeWarning) stakeWarning.style.display = 'block';
+        if (stakeCost) stakeCost.style.display = 'inline';
+        document.querySelectorAll('.timelock-owner-wallet-phrase').forEach(el => {
+            el.textContent = `the contract owner's wallet(${short})`;
+        });
     } else {
         if (banner) banner.style.display = 'none';
         if (heading) heading.textContent = 'Your Timelock Vaults';
         if (stakeWarning) stakeWarning.style.display = 'none';
+        if (stakeCost) stakeCost.style.display = 'none';
+        document.querySelectorAll('.timelock-owner-wallet-phrase').forEach(el => {
+            el.textContent = 'your wallet';
+        });
     }
 }
 
@@ -677,9 +766,19 @@ export async function loadUserVaults() {
 
     container.innerHTML = '<p style="color:#aaa">Loading vaults...</p>';
 
+    // Hide the stale totals banner immediately so the previous account's
+    // B0x/0xBTC totals don't linger while the new account's vaults load
+    // (or forever, if the new account turns out to have zero vaults).
+    const totalElReset = document.getElementById('timelock-vaults-total');
+    if (totalElReset) totalElReset.style.display = 'none';
+
     _updateMasqueradeBanner();
 
     try {
+        // Kicked off in parallel with the vault RPC calls below; only actually
+        // hits the chain once per page load (cached after that).
+        const priceRatioPromise = fetchPriceRatioOnce();
+
         const provider = await getTimelockProvider();
         const factoryContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, provider);
 
@@ -822,6 +921,8 @@ export async function loadUserVaults() {
         });
 
         userVaults = loadedVaults;
+        await priceRatioPromise;
+        if (myGeneration !== loadGeneration) return;
         renderVaultCards(container);
     } catch (err) {
         if (myGeneration !== loadGeneration) return;
@@ -929,6 +1030,31 @@ export function filterVaults(query) {
     renderVaultCards(container);
 }
 
+// Converts a human-readable B0x amount into its 0xBTC equivalent using the
+// pool price ratio Timelock fetches for itself (see fetchPriceRatioOnce),
+// falling back to window.ratioz if that hasn't resolved yet for some reason.
+// Mirrors the token-order-dependent math used for the "TokenB is B0x" case
+// in positions-ratio.js. Returns null if no ratio is available at all.
+function convertB0xToOxBtc(b0xAmount) {
+    const ratioz = _cachedPriceRatio || window.ratioz;
+    if (!ratioz || ratioz.toString() === '0' || !b0xAmount) return null;
+
+    try {
+        const priceRatio = BigInt(ratioz.toString());
+        const b0xWei = BigInt(ethers.utils.parseUnits(b0xAmount.toFixed(18), 18).toString());
+
+        const zeroxBtcIsToken0 = BigInt(tokenAddresses['0xBTC'].toLowerCase()) < BigInt(tokenAddresses['B0x'].toLowerCase());
+        const amountWith8Decimals0xBTC = zeroxBtcIsToken0
+            ? (b0xWei * (10n ** 18n)) / priceRatio
+            : (b0xWei * priceRatio) / (10n ** 18n);
+
+        return parseFloat(ethers.utils.formatUnits(amountWith8Decimals0xBTC.toString(), 8));
+    } catch (err) {
+        console.error('convertB0xToOxBtc error:', err);
+        return null;
+    }
+}
+
 function renderVaultCards(container) {
     if (!container) return;
 
@@ -938,6 +1064,22 @@ function renderVaultCards(container) {
         // down to 1 entry — otherwise there'd be no way to clear the search
         // and get back to the full list.
         searchWrap.style.display = (userVaults.length >= VAULT_SEARCH_THRESHOLD || singleVaultView) ? 'block' : 'none';
+    }
+
+    // Total B0x staked across all of the user's vaults, shown above the list
+    // regardless of any active search filter.
+    const totalEl = document.getElementById('timelock-vaults-total');
+    if (totalEl) {
+        if (userVaults.length > 0) {
+            const totalB0x = userVaults.reduce((sum, vault) => sum + (vault.totalB0xStaked || 0), 0);
+            const totalOxBtc = convertB0xToOxBtc(totalB0x);
+            const timelockLabel = userVaults.length > 1 ? 'Timelocks' : 'Timelock';
+            totalEl.style.display = 'block';
+            totalEl.innerHTML = `<div>Total B0x Staked in ${timelockLabel}: ${totalB0x.toFixed(4)}</div>` +
+                (totalOxBtc !== null ? `<div style="color:#ff9800">Total 0xBTC Staked in ${timelockLabel}: ${totalOxBtc.toFixed(8)}</div>` : '');
+        } else {
+            totalEl.style.display = 'none';
+        }
     }
 
     if (userVaults.length === 0) {
@@ -1046,9 +1188,229 @@ async function refreshVaultStatus(vaultAddress) {
             <div class="timelock-status-row"><b>Status:</b> ${lockText}</div>
             <div class="timelock-status-row"><b>Unlock Time:</b> ${formatUnlockTime(unlockTime.toString())}</div>
             <div class="timelock-status-row"><b>NFTs in Vault:</b> ${stakedIds.length > 0 ? stakedIds.map(id => 'NFT #' + id).join(', ') : 'None'}</div>`;
+
+        updateLockGatedButton('timelockWithdrawNFTBtn', locked, 'Withdraw NFT Disabled until vault unlocks');
+        updateLockGatedButton('timelockWithdrawTokenBtn', locked, 'Withdraw ERC-20 Token disabled until vault unlocks');
+        updateLockGatedButton('timelockSmartWithdrawBtn', locked, 'Smart Contract Withdrawal disabled until vault unlocks');
+
+        await updateExitAllSectionVisibility(vaultAddress, stakedIds.length);
     } catch (e) {
         statusEl.innerHTML = `<p style="color:#e55">Could not load vault status: ${e.message}</p>`;
     }
+}
+
+// Disables a withdrawal button with an explanatory label while the vault is
+// locked, and restores its normal label once it unlocks. Relies on
+// disableBtn/enableBtn's dataset.orig caching to remember the real label.
+function updateLockGatedButton(btnId, locked, disabledLabel) {
+    if (locked) {
+        disableBtn(btnId, disabledLabel);
+    } else {
+        enableBtn(btnId);
+    }
+}
+
+// exitAllTogether(startIndex, count, ...) pages through the LP pool's own
+// staked-position records for this vault — not the vault's stakedTokenCount()
+// list. If the pool has more NFTs staked for this vault than the vault's own
+// counter knows about, the default startIndex=0 call can miss positions —
+// that's the only scenario Exit All is needed for, since Smart Contract
+// Withdrawal already handles the matching-count case. So the whole section
+// stays hidden unless this mismatch is detected.
+async function fetchVaultLPPoolStakedCount(vaultAddress) {
+    try {
+        const readProvider = await getTimelockProvider();
+        const positionFinder = new ethers.Contract(contractAddress_PositionFinderPro, POSITION_FINDER_ABI, readProvider);
+        const result = await withRpcRetry(
+            () => positionFinder.getIDSofStakedTokensForUserwithMinimum(
+                vaultAddress,
+                tokenAddresses['B0x'],
+                tokenAddresses['0xBTC'],
+                0, 0, 500,
+                hookAddress
+            ),
+            'getIDSofStakedTokensForUserwithMinimum (exit-all check)'
+        );
+        return result[0].length;
+    } catch (e) {
+        console.warn('[Timelock] Could not fetch LP pool staked count:', e);
+        return null;
+    }
+}
+
+async function updateExitAllSectionVisibility(vaultAddress, timelockStakedCount) {
+    const section = document.getElementById('timelock-exit-all-section');
+    const startInput = document.getElementById('timelock-exit-start');
+    const smartWithdrawWarning = document.getElementById('timelock-smart-withdraw-mismatch-warning');
+
+    const poolStakedCount = await fetchVaultLPPoolStakedCount(vaultAddress);
+    const mismatch = poolStakedCount !== null && timelockStakedCount < poolStakedCount;
+
+    if (section) section.style.display = mismatch ? '' : 'none';
+    if (smartWithdrawWarning) smartWithdrawWarning.style.display = mismatch ? '' : 'none';
+
+    if (mismatch) {
+        const tlCountEl = document.getElementById('timelock-exit-mismatch-timelock-count');
+        const poolCountEl = document.getElementById('timelock-exit-mismatch-pool-count');
+        if (tlCountEl) tlCountEl.textContent = timelockStakedCount;
+        if (poolCountEl) poolCountEl.textContent = poolStakedCount;
+        const tlCountEl2 = document.getElementById('timelock-exit-mismatch-timelock-count2');
+        const poolCountEl2 = document.getElementById('timelock-exit-mismatch-pool-count2');
+        if (tlCountEl2) tlCountEl2.textContent = timelockStakedCount;
+        if (poolCountEl2) poolCountEl2.textContent = poolStakedCount;
+    } else {
+        // Reset so a leftover value from a previous (mismatched) vault isn't
+        // silently used if the section becomes visible again later.
+        if (startInput) startInput.value = '0';
+    }
+}
+
+const POSITION_FINDER_ABI = [
+    {
+        "inputs": [
+            { "internalType": "address", "name": "user", "type": "address" },
+            { "internalType": "address", "name": "Token0", "type": "address" },
+            { "internalType": "address", "name": "Token1", "type": "address" },
+            { "internalType": "uint256", "name": "minAmount0", "type": "uint256" },
+            { "internalType": "uint256", "name": "startIndex", "type": "uint256" },
+            { "internalType": "uint256", "name": "count", "type": "uint256" },
+            { "internalType": "address", "name": "HookAddress", "type": "address" }
+        ],
+        "name": "getIDSofStakedTokensForUserwithMinimum",
+        "outputs": [
+            { "internalType": "uint256[]", "name": "ids", "type": "uint256[]" },
+            { "internalType": "uint256[]", "name": "LiquidityTokenA", "type": "uint256[]" },
+            { "internalType": "uint256[]", "name": "LiquidityTokenB", "type": "uint256[]" },
+            { "internalType": "uint128[]", "name": "positionLiquidity", "type": "uint128[]" },
+            { "internalType": "uint256[]", "name": "timeStakedAt", "type": "uint256[]" },
+            { "internalType": "uint256[]", "name": "multiplierPenalty", "type": "uint256[]" },
+            { "internalType": "address[]", "name": "currency0", "type": "address[]" },
+            { "internalType": "address[]", "name": "currency1", "type": "address[]" },
+            { "internalType": "uint256[]", "name": "poolInfo", "type": "uint256[]" },
+            { "internalType": "int128", "name": "startCountAt", "type": "int128" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "name": "user", "type": "address" },
+            { "name": "tokenIds", "type": "uint256[]" },
+            { "name": "Token0", "type": "address" },
+            { "name": "Token1", "type": "address" },
+            { "name": "HookAddress", "type": "address" },
+            { "name": "minTokenA", "type": "uint256" }
+        ],
+        "name": "findUserTokenIdswithMinimumIndividual",
+        "outputs": [
+            { "name": "ownedTokens", "type": "uint256[]" },
+            { "name": "amountTokenA", "type": "uint256[]" },
+            { "name": "amountTokenB", "type": "uint256[]" },
+            { "name": "positionLiquidity", "type": "uint128[]" },
+            { "name": "feesOwedTokenA", "type": "int128[]" },
+            { "name": "feesOwedTokenB", "type": "int128[]" },
+            {
+                "name": "poolKeyz", "type": "tuple[]",
+                "components": [
+                    { "name": "currency0", "type": "address" },
+                    { "name": "currency1", "type": "address" },
+                    { "name": "fee", "type": "uint24" },
+                    { "name": "tickSpacing", "type": "int24" },
+                    { "name": "hooks", "type": "address" }
+                ]
+            },
+            { "name": "poolInfo", "type": "uint256[]" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+];
+
+// Looks up pool/token-amount info for each staked NFT via the PositionFinder
+// contract, then ranks them by B0x amount held (used as a value proxy) —
+// highest first. Shared by the withdraw-NFT dropdown and the smart withdrawal
+// flow so both agree on which positions are "most valuable".
+async function fetchVaultPositionsRankedByValue(vaultAddress, stakedIds) {
+    const readProvider = await getTimelockProvider();
+    const vaultPosById = {};
+    const positionFinder = new ethers.Contract(contractAddress_PositionFinderPro, POSITION_FINDER_ABI, readProvider);
+
+    // Query LP pool staked positions (NFT staked into LP pool through vault)
+    try {
+        const result = await withRpcRetry(
+            () => positionFinder.getIDSofStakedTokensForUserwithMinimum(
+                vaultAddress,
+                tokenAddresses['B0x'],
+                tokenAddresses['0xBTC'],
+                0, 0, 50,
+                hookAddress
+            ),
+            'getIDSofStakedTokensForUserwithMinimum'
+        );
+        for (let i = 0; i < result[0].length; i++) {
+            const tid = result[0][i].toString();
+            const symA = getSymbolFromAddress(result[6][i]);
+            const symB = getSymbolFromAddress(result[7][i]);
+            const decA = tokenAddressesDecimals[symA] || '18';
+            const decB = tokenAddressesDecimals[symB] || '18';
+            vaultPosById[tid] = {
+                pool: `${symA}/${symB}`,
+                tokenA: symA,
+                tokenB: symB,
+                currentTokenA: ethers.utils.formatUnits(result[1][i], decA),
+                currentTokenB: ethers.utils.formatUnits(result[2][i], decB)
+            };
+        }
+    } catch (e) {
+        console.warn('[Timelock] PositionFinder staked query failed:', e);
+    }
+    await sleep(1000);
+    // For any IDs not found above, query vault-held positions (NFT sitting in vault, not staked in LP pool)
+    const missingIds = stakedIds.map(id => id.toString().trim()).filter(tid => !vaultPosById[tid]);
+    if (missingIds.length > 0) {
+        try {
+            const result2 = await withRpcRetry(
+                () => positionFinder.findUserTokenIdswithMinimumIndividual(
+                    vaultAddress,
+                    missingIds,
+                    tokenAddresses['B0x'],
+                    tokenAddresses['0xBTC'],
+                    hookAddress,
+                    0
+                ),
+                'findUserTokenIdswithMinimumIndividual'
+            );
+            for (let i = 0; i < result2[0].length; i++) {
+                const tid = result2[0][i].toString();
+                const poolKey = result2[6][i];
+                const symA = getSymbolFromAddress(poolKey.currency0);
+                const symB = getSymbolFromAddress(poolKey.currency1);
+                const decA = tokenAddressesDecimals[symA] || '18';
+                const decB = tokenAddressesDecimals[symB] || '18';
+                vaultPosById[tid] = {
+                    pool: `${symA}/${symB}`,
+                    tokenA: symA,
+                    tokenB: symB,
+                    currentTokenA: ethers.utils.formatUnits(result2[1][i], decA),
+                    currentTokenB: ethers.utils.formatUnits(result2[2][i], decB)
+                };
+            }
+        } catch (e) {
+            console.warn('[Timelock] PositionFinder vault-held query failed:', e);
+        }
+    }
+
+    const getB0xAmount = (pos) => {
+        if (!pos) return 0;
+        if (pos.tokenA === 'B0x') return parseFloat(pos.currentTokenA) || 0;
+        if (pos.tokenB === 'B0x') return parseFloat(pos.currentTokenB) || 0;
+        return 0;
+    };
+
+    return stakedIds
+        .map(id => id.toString().trim())
+        .map(tokenId => ({ tokenId, b0xValue: getB0xAmount(vaultPosById[tokenId]), ...vaultPosById[tokenId] }))
+        .sort((a, b) => b.b0xValue - a.b0xValue);
 }
 
 async function populateNFTSelectors(vaultAddress) {
@@ -1105,155 +1467,15 @@ async function populateNFTSelectors(vaultAddress) {
             if (stakedIds.length === 0) {
                 withdrawSelect.innerHTML = '<option value="">No NFTs staked in this vault</option>';
             } else {
-                const POSITION_FINDER_ABI = [
-                    {
-                        "inputs": [
-                            { "internalType": "address", "name": "user", "type": "address" },
-                            { "internalType": "address", "name": "Token0", "type": "address" },
-                            { "internalType": "address", "name": "Token1", "type": "address" },
-                            { "internalType": "uint256", "name": "minAmount0", "type": "uint256" },
-                            { "internalType": "uint256", "name": "startIndex", "type": "uint256" },
-                            { "internalType": "uint256", "name": "count", "type": "uint256" },
-                            { "internalType": "address", "name": "HookAddress", "type": "address" }
-                        ],
-                        "name": "getIDSofStakedTokensForUserwithMinimum",
-                        "outputs": [
-                            { "internalType": "uint256[]", "name": "ids", "type": "uint256[]" },
-                            { "internalType": "uint256[]", "name": "LiquidityTokenA", "type": "uint256[]" },
-                            { "internalType": "uint256[]", "name": "LiquidityTokenB", "type": "uint256[]" },
-                            { "internalType": "uint128[]", "name": "positionLiquidity", "type": "uint128[]" },
-                            { "internalType": "uint256[]", "name": "timeStakedAt", "type": "uint256[]" },
-                            { "internalType": "uint256[]", "name": "multiplierPenalty", "type": "uint256[]" },
-                            { "internalType": "address[]", "name": "currency0", "type": "address[]" },
-                            { "internalType": "address[]", "name": "currency1", "type": "address[]" },
-                            { "internalType": "uint256[]", "name": "poolInfo", "type": "uint256[]" },
-                            { "internalType": "int128", "name": "startCountAt", "type": "int128" }
-                        ],
-                        "stateMutability": "view",
-                        "type": "function"
-                    },
-                    {
-                        "inputs": [
-                            { "name": "user", "type": "address" },
-                            { "name": "tokenIds", "type": "uint256[]" },
-                            { "name": "Token0", "type": "address" },
-                            { "name": "Token1", "type": "address" },
-                            { "name": "HookAddress", "type": "address" },
-                            { "name": "minTokenA", "type": "uint256" }
-                        ],
-                        "name": "findUserTokenIdswithMinimumIndividual",
-                        "outputs": [
-                            { "name": "ownedTokens", "type": "uint256[]" },
-                            { "name": "amountTokenA", "type": "uint256[]" },
-                            { "name": "amountTokenB", "type": "uint256[]" },
-                            { "name": "positionLiquidity", "type": "uint128[]" },
-                            { "name": "feesOwedTokenA", "type": "int128[]" },
-                            { "name": "feesOwedTokenB", "type": "int128[]" },
-                            {
-                                "name": "poolKeyz", "type": "tuple[]",
-                                "components": [
-                                    { "name": "currency0", "type": "address" },
-                                    { "name": "currency1", "type": "address" },
-                                    { "name": "fee", "type": "uint24" },
-                                    { "name": "tickSpacing", "type": "int24" },
-                                    { "name": "hooks", "type": "address" }
-                                ]
-                            },
-                            { "name": "poolInfo", "type": "uint256[]" }
-                        ],
-                        "stateMutability": "view",
-                        "type": "function"
-                    }
-                ];
+                // Ranked highest-value first so users can easily withdraw their
+                // most valuable position first.
+                const rankedPositions = await fetchVaultPositionsRankedByValue(vaultAddress, stakedIds);
 
-                const vaultPosById = {};
-                const positionFinder = new ethers.Contract(contractAddress_PositionFinderPro, POSITION_FINDER_ABI, readProvider);
-
-                // Query LP pool staked positions (NFT staked into LP pool through vault)
-                try {
-                    const result = await withRpcRetry(
-                        () => positionFinder.getIDSofStakedTokensForUserwithMinimum(
-                            vaultAddress,
-                            tokenAddresses['B0x'],
-                            tokenAddresses['0xBTC'],
-                            0, 0, 50,
-                            hookAddress
-                        ),
-                        'getIDSofStakedTokensForUserwithMinimum'
-                    );
-                    for (let i = 0; i < result[0].length; i++) {
-                        const tid = result[0][i].toString();
-                        const symA = getSymbolFromAddress(result[6][i]);
-                        const symB = getSymbolFromAddress(result[7][i]);
-                        const decA = tokenAddressesDecimals[symA] || '18';
-                        const decB = tokenAddressesDecimals[symB] || '18';
-                        vaultPosById[tid] = {
-                            pool: `${symA}/${symB}`,
-                            tokenA: symA,
-                            tokenB: symB,
-                            currentTokenA: ethers.utils.formatUnits(result[1][i], decA),
-                            currentTokenB: ethers.utils.formatUnits(result[2][i], decB)
-                        };
-                    }
-                } catch (e) {
-                    console.warn('[Timelock] PositionFinder staked query failed:', e);
-                }
-                await sleep(1000);  
-                // For any IDs not found above, query vault-held positions (NFT sitting in vault, not staked in LP pool)
-                const missingIds = stakedIds.map(id => id.toString().trim()).filter(tid => !vaultPosById[tid]);
-                if (missingIds.length > 0) {
-                    try {
-                        const result2 = await withRpcRetry(
-                            () => positionFinder.findUserTokenIdswithMinimumIndividual(
-                                vaultAddress,
-                                missingIds,
-                                tokenAddresses['B0x'],
-                                tokenAddresses['0xBTC'],
-                                hookAddress,
-                                0
-                            ),
-                            'findUserTokenIdswithMinimumIndividual'
-                        );
-                        for (let i = 0; i < result2[0].length; i++) {
-                            const tid = result2[0][i].toString();
-                            const poolKey = result2[6][i];
-                            const symA = getSymbolFromAddress(poolKey.currency0);
-                            const symB = getSymbolFromAddress(poolKey.currency1);
-                            const decA = tokenAddressesDecimals[symA] || '18';
-                            const decB = tokenAddressesDecimals[symB] || '18';
-                            vaultPosById[tid] = {
-                                pool: `${symA}/${symB}`,
-                                tokenA: symA,
-                                tokenB: symB,
-                                currentTokenA: ethers.utils.formatUnits(result2[1][i], decA),
-                                currentTokenB: ethers.utils.formatUnits(result2[2][i], decB)
-                            };
-                        }
-                    } catch (e) {
-                        console.warn('[Timelock] PositionFinder vault-held query failed:', e);
-                    }
-                }
-
-                // Sort by the B0x amount held in each position (highest first) so
-                // users can easily withdraw their most valuable position first.
-                const getB0xAmount = (pos) => {
-                    if (!pos) return 0;
-                    if (pos.tokenA === 'B0x') return parseFloat(pos.currentTokenA) || 0;
-                    if (pos.tokenB === 'B0x') return parseFloat(pos.currentTokenB) || 0;
-                    return 0;
-                };
-                const sortedStakedIds = stakedIds
-                    .map(id => id.toString().trim())
-                    .sort((a, b) => getB0xAmount(vaultPosById[b]) - getB0xAmount(vaultPosById[a]));
-
-                withdrawSelect.innerHTML = sortedStakedIds.map(tokenId => {
-                    const pos = vaultPosById[tokenId];
-                    const a = pos?.currentTokenA ? Number(pos.currentTokenA).toFixed(4) : '0';
-                    const b = pos?.currentTokenB ? Number(pos.currentTokenB).toFixed(4) : '0';
-                    const symA = pos?.tokenA || '';
-                    const symB = pos?.tokenB || '';
-                    const label = `NFT #${tokenId} — ${pos?.pool || 'B0x/0xBTC'} (${a} ${symA} / ${b} ${symB})`;
-                    return `<option value="${tokenId}">${label}</option>`;
+                withdrawSelect.innerHTML = rankedPositions.map(pos => {
+                    const a = pos.currentTokenA ? Number(pos.currentTokenA).toFixed(4) : '0';
+                    const b = pos.currentTokenB ? Number(pos.currentTokenB).toFixed(4) : '0';
+                    const label = `NFT #${pos.tokenId} — ${pos.pool || 'B0x/0xBTC'} (${a} ${pos.tokenA || ''} / ${b} ${pos.tokenB || ''})`;
+                    return `<option value="${pos.tokenId}">${label}</option>`;
                 }).join('');
             }
         } catch (e) {
@@ -1597,7 +1819,7 @@ export async function exitAllFromVault() {
     try {
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
         showButtonToast('info', 'Exiting All', `Calling exitAllTogether(${startIndex}, ${count}). Confirm in wallet.`);
-        const tx = await vaultContract.exitAllTogether(startIndex, count);
+        const tx = await vaultContract.exitAllTogether(startIndex, count, []);
         await tx.wait();
         showButtonToast('success', 'Exit Complete!', 'All rewards collected and LP positions exited.');
         await loadUserVaults();
@@ -1608,6 +1830,114 @@ export async function exitAllFromVault() {
         showButtonToast('error', 'Failed', err.reason || err.message || 'Exit failed.');
     } finally {
         enableBtn('timelockExitAllBtn');
+    }
+    } finally { clearButtonToastAnchor(); }
+}
+
+// ============================================
+// SMART CONTRACT WITHDRAWAL
+// ============================================
+
+// Matches the vault's withdraw_Multiple_NFTs_And_ERC20s batch size — it takes
+// an array of tokenIds, so each run withdraws this many NFTs at once.
+const SMART_WITHDRAW_BATCH_SIZE = 20;
+
+/**
+ * Withdraws the 2 most valuable staked NFTs from the vault in a single
+ * transaction via withdraw_Multiple_NFTs_And_ERC20s, claiming B0x / 0xBTC /
+ * WETH rewards for them along the way. First sanity-checks the vault's
+ * stakedTokenCount() against its actual enumerated staked-token list, then
+ * ranks staked NFTs by value (via fetchVaultPositionsRankedByValue) and takes
+ * the top SMART_WITHDRAW_BATCH_SIZE. If the vault holds more than that, this
+ * only clears one batch — the user is told how many more runs are needed.
+ */
+export async function withdrawMultipleNFTsAndERC20sFromVault() {
+    setButtonToastAnchor('timelockSmartWithdrawBtn');
+    const statusEl = document.getElementById('timelock-smart-withdraw-status');
+    try {
+    if (!window.walletConnected) await window.connectWallet();
+    if (!selectedVaultAddress) {
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
+        return;
+    }
+
+    disableBtn('timelockSmartWithdrawBtn');
+    if (statusEl) statusEl.textContent = 'Checking staked NFTs...';
+
+    try {
+        const readProvider = await getTimelockProvider();
+        const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, readProvider);
+
+        // Sanity-check the vault's own counter against its actual enumerable
+        // staked-token list before touching anything.
+        const totalFromCounter = (await withRpcRetry(() => vaultContract.stakedTokenCount(), 'stakedTokenCount')).toNumber();
+        const stakedIds = await fetchAllStakedTokenIds(vaultContract);
+
+        if (stakedIds.length === 0) {
+            showButtonToast('info', 'Nothing to Withdraw', 'This vault has no staked NFTs.');
+            if (statusEl) statusEl.textContent = 'This vault has no staked NFTs.';
+            return;
+        }
+
+        if (totalFromCounter === stakedIds.length) {
+            showButtonToast('info', 'Vault Check', 'Same amount of NFTs staked as in vault. easy withdraw proceed.');
+        } else {
+            console.warn(`[Timelock] stakedTokenCount (${totalFromCounter}) does not match enumerated staked IDs (${stakedIds.length})`);
+        }
+
+        const ranked = await fetchVaultPositionsRankedByValue(selectedVaultAddress, stakedIds);
+        const batch = ranked.slice(0, SMART_WITHDRAW_BATCH_SIZE);
+        const batchTokenIds = batch.map(pos => pos.tokenId);
+        const isAllPositions = stakedIds.length <= SMART_WITHDRAW_BATCH_SIZE;
+        const totalRuns = Math.ceil(stakedIds.length / SMART_WITHDRAW_BATCH_SIZE);
+        const nftListText = batchTokenIds.map(id => `#${id}`).join(', ');
+
+        const previewMsg = isAllPositions
+            ? `This is all ${stakedIds.length} staked NFT(s): ${nftListText}. One withdrawal empties the vault.`
+            : `${stakedIds.length} NFTs are staked — this is not all positions. Withdrawing the ${SMART_WITHDRAW_BATCH_SIZE} most valuable now (${nftListText}). You will need to run this ${totalRuns} times total (${SMART_WITHDRAW_BATCH_SIZE} at a time) to withdraw everything.`;
+        showButtonToast('info', isAllPositions ? 'All Positions' : 'Partial Withdrawal', previewMsg);
+        if (statusEl) statusEl.textContent = previewMsg;
+
+        const rewardTokens = [
+            tokenAddresses['B0x'],
+            tokenAddresses['0xBTC'],
+            tokenAddresses['WETH']
+        ];
+
+        const vaultWriteContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
+        showButtonToast('info', 'Withdrawing', `Withdrawing NFTs ${nftListText}. Confirm in your wallet.`);
+        const tx = await vaultWriteContract.withdraw_Multiple_NFTs_And_ERC20s(batchTokenIds, rewardTokens);
+        await tx.wait();
+
+        const remaining = stakedIds.length - batchTokenIds.length;
+        const successMsg = remaining > 0
+            ? `Withdrew NFTs ${nftListText} and claimed rewards. ${remaining} NFT(s) remain — run this ${Math.ceil(remaining / SMART_WITHDRAW_BATCH_SIZE)} more time(s) to finish.`
+            : `Withdrew NFTs ${nftListText} and claimed rewards. Vault is now empty of NFTs.`;
+        showButtonToast('success', 'Smart Withdrawal Complete!', successMsg);
+        if (statusEl) statusEl.textContent = successMsg;
+
+        // Force the background NFT-owner scanner to pick up the returned NFTs
+        // immediately, so they show up in "Eligible NFT Positions" right away
+        // instead of only after a reload (same fix as single-NFT withdraw).
+        triggerRefresh();
+        let waitedForScan = 0;
+        while (!isSearchingLogs() && waitedForScan < 3000) {
+            await sleep(100);
+            waitedForScan += 100;
+        }
+        if (window.getTokenIDsOwnedByMetamask) await window.getTokenIDsOwnedByMetamask(true);
+        renderAllowedNFTs();
+
+        await loadUserVaults();
+        await selectVault(selectedVaultAddress);
+        await loadVaultTokenBalances(selectedVaultAddress);
+    } catch (err) {
+        console.error('withdrawMultipleNFTsAndERC20sFromVault error:', err);
+        const msg = decodeVaultError(err);
+        showButtonToast('error', 'Smart Withdrawal Failed', msg);
+        if (statusEl) statusEl.textContent = msg;
+    } finally {
+        enableBtn('timelockSmartWithdrawBtn');
     }
     } finally { clearButtonToastAnchor(); }
 }

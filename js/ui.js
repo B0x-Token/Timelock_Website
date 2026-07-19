@@ -2186,6 +2186,7 @@ function combineData() {
     baseData.holders.forEach(holder => {
         addressMap.set(holder.address, {
             address: holder.address,
+            owner: holder.owner || null,
             b0xBalance: parseFloat(holder.balanceFormatted) || 0,
             b0xBalanceRaw: holder.balance,
             ethB0xBalance: 0,
@@ -2199,9 +2200,11 @@ function combineData() {
         if (existing) {
             existing.ethB0xBalance = parseFloat(holder.balanceFormatted) || 0;
             existing.ethB0xBalanceRaw = holder.balance;
+            if (!existing.owner && holder.owner) existing.owner = holder.owner;
         } else {
             addressMap.set(holder.address, {
                 address: holder.address,
+                owner: holder.owner || null,
                 b0xBalance: 0,
                 b0xBalanceRaw: '0',
                 ethB0xBalance: parseFloat(holder.balanceFormatted) || 0,
@@ -2810,6 +2813,15 @@ export function renderTable2() {
                        title="${user.address}">
                         ${user.address}
                     </a>
+                    ${user.owner ? `
+                    <br>
+                    <a href="https://basescan.org/address/${user.owner}"
+                       target="_blank"
+                       class="address-link"
+                       title="${user.owner}"
+                       style="font-size:0.75em">
+                        Owned By: ${user.owner}
+                    </a>` : ''}
                 </td>
                 <td class="balance55">${b0xStakedFormatted}</td>
                 <td class="balance55">${btcStakedFormatted}</td>
@@ -2891,6 +2903,13 @@ export function renderTable() {
     const screenWidth = window.innerWidth;
     const maxDecimals = screenWidth <= 650 ? 1 : 6;
 
+    // These two holders' "owner" field is not a delegated/vault relationship
+    // worth surfacing, so the "Owned By" line is suppressed for them only.
+    const OWNER_DISPLAY_EXCLUDED_ADDRESSES = [
+        '0x08f489C5017942d3b7c82C1c178877C80492c948',
+        '0x498581fF718922c3f8e6A244956aF099B2652b2b'
+    ].map(addr => addr.toLowerCase());
+
     pageData.forEach((holder, index) => {
         var rank = "";
         if (sortByB0xBaseChain) {
@@ -2898,11 +2917,21 @@ export function renderTable() {
         } else {
             rank = holder.rankETHb0x;
         }
+        const showOwner = holder.owner && !OWNER_DISPLAY_EXCLUDED_ADDRESSES.includes(holder.address.toLowerCase());
         tableHTML += `
             <tr>
                 <td class="spot-rich">${rank}</td>
                 <td class="address-rich" data-full-address="${holder.address}">
                     <a href="${_BLOCK_EXPLORER_ADDRESS_URL}${holder.address}" target="_blank">${holder.address}</a>
+                    ${showOwner ? `
+                    <br>
+                    <a href="${_BLOCK_EXPLORER_ADDRESS_URL}${holder.owner}"
+                       target="_blank"
+                       class="address-link"
+                       title="${holder.owner}"
+                       style="font-size:0.75em">
+                        Owned By: ${holder.owner}
+                    </a>` : ''}
                 </td>
                 <td class="balance-rich">${holder.b0xBalance.toLocaleString(undefined, { maximumFractionDigits: maxDecimals })}</td>
                 <td class="balance-rich">${holder.ethB0xBalance.toLocaleString(undefined, { maximumFractionDigits: maxDecimals })}</td>
