@@ -2295,7 +2295,8 @@ export function filterData2() {
         filteredData2 = [...combinedData];
     } else {
         filteredData2 = combinedData.filter(holder =>
-            holder.address.toLowerCase().includes(searchTerm)
+            holder.address.toLowerCase().includes(searchTerm) ||
+            (holder.owner && holder.owner.toLowerCase().includes(searchTerm))
         );
     }
 
@@ -2326,7 +2327,8 @@ export function filterData() {
         filteredData = [...allStakingData];
     } else {
         filteredData = allStakingData.filter(user =>
-            user.address.toLowerCase().includes(searchTerm)
+            user.address.toLowerCase().includes(searchTerm) ||
+            (user.owner && user.owner.toLowerCase().includes(searchTerm))
         );
     }
 

@@ -1107,6 +1107,7 @@ function renderVaultCards(container) {
         const stakedList = vault.stakedTokenIds.length > 0
             ? vault.stakedTokenIds.map(id => `NFT #${id}`).join(', ')
             : 'None';
+        const vaultOxBtcStaked = convertB0xToOxBtc(vault.totalB0xStaked || 0);
 
         html += `
         <div class="timelock-vault-card ${selectedVaultAddress === vault.address ? 'selected' : ''}">
@@ -1117,6 +1118,7 @@ function renderVaultCards(container) {
             <div class="timelock-vault-detail">Unlocks: ${formatUnlockTime(vault.unlockTime)}</div>
             <div class="timelock-vault-detail">NFTs in Vault: ${stakedList}</div>
             <div class="timelock-vault-detail">B0x Staked: ${(vault.totalB0xStaked || 0).toFixed(4)}</div>
+            ${vaultOxBtcStaked !== null ? `<div class="timelock-vault-detail" style="color:#ff9800">0xBTC Staked: ${vaultOxBtcStaked.toFixed(8)}</div>` : ''}
             <button class="btn-primary timelock-select-btn" onclick="Timelock.selectVault('${vault.address}')">
                 ${selectedVaultAddress === vault.address ? 'Selected' : 'Select Vault'}
             </button>
