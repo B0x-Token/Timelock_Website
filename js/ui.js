@@ -2010,10 +2010,9 @@ export async function loadData2() {
         updateStats55();
 
         // Convert users object to array for easier handling
-        allStakingData = Object.entries(stakingData.users).map(([address, data]) => ({
-            address,
-            ...data
-        }));
+        allStakingData = Object.entries(stakingData.users)
+            .map(([address, data]) => ({ address, ...data }))
+            .filter(user => Number(user.B0xStaked) > 0 || Number(user['0xBTCStaked']) > 0);
         filteredData = [...allStakingData];
 
         // Initial render
