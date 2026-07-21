@@ -840,7 +840,7 @@
                             <p style="color:#f0a500">Only available after the vault unlocks. Withdraws the 20 most valuable staked NFTs in one transaction and claims B0x / 0xBTC / WETH rewards for them, returning everything to <span class="timelock-owner-wallet-phrase">your wallet</span>.</p>
                             <p>Checks the vault's staked-NFT count first. If the vault has 20 or fewer NFTs staked, this one transaction empties it. If it has more (e.g. 40 NFTs), you'll need to run this multiple times — always the 2 most valuable remaining positions each time (40 NFTs = 2 runs).</p>
                             <div id="timelock-smart-withdraw-status" style="margin-bottom:12px;font-size:0.9em;color:#aaa"></div>
-                            <button class="btn-warning" id="timelockSmartWithdrawBtn" onclick="Timelock.withdrawMultipleNFTsAndERC20sFromVault()">Withdraw 2 Most Valuable NFTs</button>
+                            <button class="btn-warning" id="timelockSmartWithdrawBtn" onclick="Timelock.withdrawMultipleNFTsAndERC20sFromVault()">Smart Withdraw Most Valuable NFTs</button>
                         </div>
 
                         <!-- Withdraw NFT -->

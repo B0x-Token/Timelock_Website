@@ -43,7 +43,7 @@ import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0x9736fbA73291d884a4aED3D1eb061aC0BBDe65e6";
+export const TIMELOCK_FACTORY_ADDRESS = "0x7b3266d159C9FC4F0B10765FAb0e354f3186E430";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 
 // Must match the factory's MAX_PAGE_SIZE constant.
@@ -1112,7 +1112,7 @@ function renderVaultCards(container) {
         html += `
         <div class="timelock-vault-card ${selectedVaultAddress === vault.address ? 'selected' : ''}">
             <div class="timelock-vault-header">
-                <a class="timelock-vault-addr" href="https://basescan.org/address/${vault.address}#readContract#F6" target="_blank" rel="noopener noreferrer" title="${vault.address}" style="color:inherit;text-decoration:underline dotted">${shortAddr}</a>
+                <a class="timelock-vault-addr" href="https://basescan.org/address/${vault.address}#readContract#F11" target="_blank" rel="noopener noreferrer" title="${vault.address}" style="color:inherit;text-decoration:underline dotted">${shortAddr}</a>
                 ${lockLabel}
             </div>
             <div class="timelock-vault-detail">Unlocks: ${formatUnlockTime(vault.unlockTime)}</div>
@@ -1159,7 +1159,7 @@ export async function selectVault(vaultAddress) {
     if (panel) panel.style.display = 'block';
 
     const addrEl = document.getElementById('timelock-selected-vault-addr');
-    if (addrEl) addrEl.innerHTML = `<a href="https://basescan.org/address/${vaultAddress}#readContract#F6" target="_blank" rel="noopener noreferrer" style="color:#aaa;text-decoration:underline dotted">${vaultAddress}</a>`;
+    if (addrEl) addrEl.innerHTML = `<a href="https://basescan.org/address/${vaultAddress}#readContract#F11" target="_blank" rel="noopener noreferrer" style="color:#aaa;text-decoration:underline dotted">${vaultAddress}</a>`;
 
     await refreshVaultStatus(vaultAddress);
     await populateNFTSelectors(vaultAddress);
@@ -1174,11 +1174,25 @@ async function refreshVaultStatus(vaultAddress) {
     try {
         const provider = await getTimelockProvider();
         const vault = new ethers.Contract(vaultAddress, TIMELOCK_VAULT_ABI, provider);
-        const [locked, secsLeft, unlockTime] = await Promise.all([
-            withRpcRetry(() => vault.isLocked(), 'isLocked'),
-            withRpcRetry(() => vault.secondsUntilUnlock(), 'secondsUntilUnlock'),
-            withRpcRetry(() => vault.unlockTime(), 'unlockTime')
-        ]);
+        const vaultInterface = new ethers.utils.Interface(TIMELOCK_VAULT_ABI);
+        const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, provider);
+
+        const calls = [
+            { target: vaultAddress, allowFailure: true, callData: vaultInterface.encodeFunctionData('isLocked') },
+            { target: vaultAddress, allowFailure: true, callData: vaultInterface.encodeFunctionData('secondsUntilUnlock') },
+            { target: vaultAddress, allowFailure: true, callData: vaultInterface.encodeFunctionData('unlockTime') }
+        ];
+        const [lockedRes, secsLeftRes, unlockTimeRes] = await withRpcRetry(
+            () => multicallContract.aggregate3(calls),
+            'multicall vault status'
+        );
+        if (!lockedRes.success || !secsLeftRes.success || !unlockTimeRes.success) {
+            throw new Error('multicall vault status call failed');
+        }
+
+        const [locked] = vaultInterface.decodeFunctionResult('isLocked', lockedRes.returnData);
+        const [secsLeft] = vaultInterface.decodeFunctionResult('secondsUntilUnlock', secsLeftRes.returnData);
+        const [unlockTime] = vaultInterface.decodeFunctionResult('unlockTime', unlockTimeRes.returnData);
 
         const stakedIds = await fetchAllStakedTokenIds(vault);
 

@@ -7042,17 +7042,18 @@ body.ipfs-active {
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 8px;
+    font-size: 1.5em;
 }
 
 .timelock-vault-addr {
     font-family: monospace;
-    font-size: 0.9em;
+    font-size: 1.35em;
     color: #a78bfa;
     word-break: break-all;
 }
 
 .timelock-vault-detail {
-    font-size: 0.85em;
+    font-size: 1.275em;
     color: #bbb;
     margin-bottom: 4px;
 }
