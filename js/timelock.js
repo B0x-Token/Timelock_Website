@@ -1590,7 +1590,7 @@ export async function stakeNFTToVault() {
         if (stakePos.tokenA === 'B0x') positionB0xAmount = parseFloat(stakePos.currentTokenA) || 0;
         else if (stakePos.tokenB === 'B0x') positionB0xAmount = parseFloat(stakePos.currentTokenB) || 0;
     }
-    const minB0xNeeded = masqueradeAddress ? Math.max(0, 100 - positionB0xAmount) : 0;
+    const minB0xNeeded = masqueradeAddress ? Math.max(0, 50 - positionB0xAmount) : 0;
     const minB0xNeededBN = ethers.utils.parseUnits(minB0xNeeded.toFixed(18), 18);
 
     if (masqueradeAddress) {
