@@ -1051,6 +1051,12 @@ export async function setupWalletListeners() {
                 window.setIsInitialPositionLoad(false);
             }
 
+            // Refresh the "Eligible NFT Positions" timelock panel now that
+            // positionData reflects the newly selected account (it otherwise
+            // keeps showing whatever the previously connected account had).
+            if (window.Timelock && typeof window.Timelock.renderAllowedNFTs === 'function') {
+                window.Timelock.renderAllowedNFTs();
+            }
 
             // Update staking stats
             if (window.updateStakingStats) {
