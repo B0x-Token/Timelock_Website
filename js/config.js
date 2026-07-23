@@ -62,7 +62,7 @@ export const ProofOfWorkAddresss = '0xd44Ee7dAdbF50214cA7009a29D9F88BCcD0E9Ff4';
 export const MULTICALL_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 // TimeLockFactory contract address — update when the contract is deployed
-export const TIMELOCK_FACTORY_ADDRESS = "0x7b3266d159C9FC4F0B10765FAb0e354f3186E430";
+export const TIMELOCK_FACTORY_ADDRESS = "0x18C86f17227bb4a203d714cf8E05e276a0d54718";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 // ============================================================================
 // TOKEN ADDRESSES - Base Network

@@ -43,7 +43,7 @@ import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0x7b3266d159C9FC4F0B10765FAb0e354f3186E430";
+export const TIMELOCK_FACTORY_ADDRESS = "0x18C86f17227bb4a203d714cf8E05e276a0d54718";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 
 // Must match the factory's MAX_PAGE_SIZE constant.
@@ -114,6 +114,17 @@ const TIMELOCK_FACTORY_ABI = [
             { "internalType": "uint256[]", "name": "amounts", "type": "uint256[]" }
         ],
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "address[]", "name": "contractsToWithdrawFrom", "type": "address[]" },
+            { "internalType": "uint256[][]", "name": "tokenIds", "type": "uint256[][]" },
+            { "internalType": "IERC20[][]", "name": "ERC20sToGetRewardAndWithdraw", "type": "address[][]" }
+        ],
+        "name": "SuperWithdrawer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     }
 ];
@@ -813,6 +824,11 @@ export async function loadUserVaults() {
                 : 'You';
             container.innerHTML = `<p style="color:#aaa">${who} have no timelock vaults yet.</p>`;
             userVaults = [];
+            renderSuperWithdrawSection();
+            // The previously selected vault (e.g. one just transferred away) no
+            // longer belongs to this account — hide its stale actions panel
+            // instead of leaving it displayed below the empty-state message.
+            if (selectedVaultAddress) resetVaultSelection();
             return;
         }
 
@@ -921,9 +937,16 @@ export async function loadUserVaults() {
         });
 
         userVaults = loadedVaults;
+        // Same staleness guard as the empty-list branch above: if the vault
+        // that was selected is no longer in this account's vault list (e.g.
+        // it was just transferred away), don't leave its actions panel showing.
+        if (selectedVaultAddress && !userVaults.some(v => v.address === selectedVaultAddress)) {
+            resetVaultSelection();
+        }
         await priceRatioPromise;
         if (myGeneration !== loadGeneration) return;
         renderVaultCards(container);
+        renderSuperWithdrawSection();
     } catch (err) {
         if (myGeneration !== loadGeneration) return;
         console.error("Error loading vaults:", err);
@@ -998,6 +1021,7 @@ async function searchVaultByAddress(vaultAddress) {
         }];
         singleVaultView = true;
         renderVaultCards(container);
+        renderSuperWithdrawSection();
     } catch (err) {
         if (myGeneration !== loadGeneration) return;
         console.error("Error searching for vault:", err);
@@ -1955,6 +1979,140 @@ export async function withdrawMultipleNFTsAndERC20sFromVault() {
     } finally {
         enableBtn('timelockSmartWithdrawBtn');
     }
+    } finally { clearButtonToastAnchor(); }
+}
+
+// ============================================
+// SUPER WITHDRAWER (EXPERIMENTAL — BATCH WITHDRAW ACROSS VAULTS)
+// ============================================
+
+// Cap on total NFTs moved in one SuperWithdrawer call, regardless of how many
+// vaults that spans — keeps a single tx from growing unbounded when a user
+// has many heavily-staked vaults unlocked at once.
+const SUPER_WITHDRAW_NFT_CAP = 10;
+
+// Only worth surfacing once someone has enough unlocked vaults that clicking
+// through them one at a time would actually be tedious.
+const SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS = 4;
+
+/**
+ * Picks which unlocked vaults (and which of their staked NFTs) a SuperWithdrawer
+ * call would cover right now. userVaults is already sorted most-B0x-staked-first
+ * (see the sort in loadUserVaults), so this greedily fills the NFT cap from the
+ * biggest stakers down, truncating rather than skipping the vault that would
+ * push the total over the cap.
+ */
+function computeSuperWithdrawBatch() {
+    const unlockedVaults = userVaults.filter(v => !v.isLocked);
+    const included = [];
+    let remaining = SUPER_WITHDRAW_NFT_CAP;
+
+    for (const vault of unlockedVaults) {
+        if (remaining <= 0) break;
+        if (!vault.stakedTokenIds || vault.stakedTokenIds.length === 0) continue;
+        const take = vault.stakedTokenIds.slice(0, remaining);
+        included.push({ address: vault.address, tokenIds: take, totalInVault: vault.stakedTokenIds.length });
+        remaining -= take.length;
+    }
+
+    const totalNFTs = included.reduce((sum, v) => sum + v.tokenIds.length, 0);
+    return { unlockedVaults, included, totalNFTs };
+}
+
+/**
+ * Shows/hides and populates the experimental Super Withdraw section based on
+ * the current userVaults list. Called anywhere userVaults is (re)loaded.
+ */
+function renderSuperWithdrawSection() {
+    const section = document.getElementById('timelock-super-withdraw-section');
+    const summaryEl = document.getElementById('timelock-super-withdraw-summary');
+    if (!section || !summaryEl) return;
+
+    const { unlockedVaults, included, totalNFTs } = computeSuperWithdrawBatch();
+
+    if (unlockedVaults.length < SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS || included.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+    const skipped = unlockedVaults.length - included.length;
+    const listHtml = included.map(v => {
+        const short = v.address.slice(0, 8) + '...' + v.address.slice(-6);
+        const countLabel = v.tokenIds.length < v.totalInVault
+            ? `${v.tokenIds.length} of ${v.totalInVault} NFTs`
+            : `${v.tokenIds.length} NFT${v.tokenIds.length === 1 ? '' : 's'}`;
+        return `<div class="timelock-vault-detail">${short} — ${countLabel}</div>`;
+    }).join('');
+
+    summaryEl.innerHTML =
+        `<div style="margin-bottom:8px">This will withdraw <strong>${totalNFTs} NFT${totalNFTs === 1 ? '' : 's'}</strong> and claim B0x / 0xBTC / WETH rewards ` +
+        `from <strong>${included.length}</strong> of your <strong>${unlockedVaults.length}</strong> unlocked vaults in one transaction, biggest stakers first.` +
+        (skipped > 0
+            ? ` ${skipped} more unlocked vault${skipped === 1 ? '' : 's'} won't fit under the ${SUPER_WITHDRAW_NFT_CAP}-NFT cap this run — run it again afterward to pick up the rest.`
+            : '') +
+        `</div>${listHtml}`;
+}
+
+/**
+ * Fires the factory's experimental SuperWithdrawer across the vaults picked
+ * by computeSuperWithdrawBatch() — one transaction, only touches vaults that
+ * are currently unlocked, biggest-staked vaults first, capped at
+ * SUPER_WITHDRAW_NFT_CAP total NFTs. Any individual vault that reverts inside
+ * the factory call is skipped rather than failing the whole batch.
+ */
+export async function superWithdrawAll() {
+    setButtonToastAnchor('timelockSuperWithdrawBtn');
+    try {
+        if (!window.walletConnected) await window.connectWallet();
+
+        const { included, totalNFTs } = computeSuperWithdrawBatch();
+        if (included.length === 0) {
+            showButtonToast('info', 'Nothing to Withdraw', 'No unlocked vaults with staked NFTs right now.');
+            return;
+        }
+
+        disableBtn('timelockSuperWithdrawBtn');
+
+        try {
+            const rewardTokens = [
+                tokenAddresses['B0x'],
+                tokenAddresses['0xBTC'],
+                tokenAddresses['WETH']
+            ];
+            const contractsToWithdrawFrom = included.map(v => v.address);
+            const tokenIdsArg = included.map(v => v.tokenIds);
+            const erc20sArg = included.map(() => rewardTokens);
+
+            showButtonToast('info', 'Super Withdrawing', `Withdrawing ${totalNFTs} NFT(s) across ${included.length} vault(s). Confirm in your wallet.`);
+
+            const factoryWriteContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, window.signer);
+            const tx = await factoryWriteContract.SuperWithdrawer(contractsToWithdrawFrom, tokenIdsArg, erc20sArg);
+            await tx.wait();
+
+            showButtonToast('success', 'Super Withdrawal Complete!', `Withdrew from ${included.length} vault(s). Any vault that couldn't be processed was skipped automatically — re-run if some are still unlocked with NFTs staked.`);
+
+            triggerRefresh();
+            let waitedForScan = 0;
+            while (!isSearchingLogs() && waitedForScan < 3000) {
+                await sleep(100);
+                waitedForScan += 100;
+            }
+            if (window.getTokenIDsOwnedByMetamask) await window.getTokenIDsOwnedByMetamask(true);
+            renderAllowedNFTs();
+
+            await loadUserVaults();
+            if (selectedVaultAddress) {
+                await selectVault(selectedVaultAddress);
+                await loadVaultTokenBalances(selectedVaultAddress);
+            }
+        } catch (err) {
+            console.error('superWithdrawAll error:', err);
+            const msg = decodeVaultError(err);
+            showButtonToast('error', 'Super Withdrawal Failed', msg);
+        } finally {
+            enableBtn('timelockSuperWithdrawBtn');
+        }
     } finally { clearButtonToastAnchor(); }
 }
 
