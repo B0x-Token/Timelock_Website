@@ -126,6 +126,15 @@ const TIMELOCK_FACTORY_ABI = [
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "address[]", "name": "contractsToDestroy", "type": "address[]" }
+        ],
+        "name": "SuperDestroyer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     }
 ];
 
@@ -825,6 +834,7 @@ export async function loadUserVaults() {
             container.innerHTML = `<p style="color:#aaa">${who} have no timelock vaults yet.</p>`;
             userVaults = [];
             renderSuperWithdrawSection();
+            await renderSuperDestroySection();
             // The previously selected vault (e.g. one just transferred away) no
             // longer belongs to this account — hide its stale actions panel
             // instead of leaving it displayed below the empty-state message.
@@ -947,6 +957,7 @@ export async function loadUserVaults() {
         if (myGeneration !== loadGeneration) return;
         renderVaultCards(container);
         renderSuperWithdrawSection();
+        await renderSuperDestroySection();
     } catch (err) {
         if (myGeneration !== loadGeneration) return;
         console.error("Error loading vaults:", err);
@@ -1022,6 +1033,7 @@ async function searchVaultByAddress(vaultAddress) {
         singleVaultView = true;
         renderVaultCards(container);
         renderSuperWithdrawSection();
+        await renderSuperDestroySection();
     } catch (err) {
         if (myGeneration !== loadGeneration) return;
         console.error("Error searching for vault:", err);
@@ -1232,6 +1244,12 @@ async function refreshVaultStatus(vaultAddress) {
         updateLockGatedButton('timelockWithdrawNFTBtn', locked, 'Withdraw NFT Disabled until vault unlocks');
         updateLockGatedButton('timelockWithdrawTokenBtn', locked, 'Withdraw ERC-20 Token disabled until vault unlocks');
         updateLockGatedButton('timelockSmartWithdrawBtn', locked, 'Smart Contract Withdrawal disabled until vault unlocks');
+
+        // Ownership transfer is only possible while the vault is locked — hide
+        // the whole card once unlocked rather than leaving a button that
+        // would just revert.
+        const transferSection = document.getElementById('timelock-transfer-ownership-section');
+        if (transferSection) transferSection.style.display = locked ? '' : 'none';
 
         await updateExitAllSectionVisibility(vaultAddress, stakedIds.length);
     } catch (e) {
@@ -1883,13 +1901,17 @@ export async function exitAllFromVault() {
 const SMART_WITHDRAW_BATCH_SIZE = 20;
 
 /**
- * Withdraws the 2 most valuable staked NFTs from the vault in a single
+ * Withdraws the most valuable staked NFTs from the vault in a single
  * transaction via withdraw_Multiple_NFTs_And_ERC20s, claiming B0x / 0xBTC /
  * WETH rewards for them along the way. First sanity-checks the vault's
  * stakedTokenCount() against its actual enumerated staked-token list, then
  * ranks staked NFTs by value (via fetchVaultPositionsRankedByValue) and takes
  * the top SMART_WITHDRAW_BATCH_SIZE. If the vault holds more than that, this
  * only clears one batch — the user is told how many more runs are needed.
+ *
+ * Works with zero staked NFTs too: withdraw_Multiple_NFTs_And_ERC20s accepts
+ * an empty tokenIds array just fine, so with nothing staked this just claims/
+ * transfers the reward ERC20 balances (B0x / 0xBTC / WETH) sitting in the vault.
  */
 export async function withdrawMultipleNFTsAndERC20sFromVault() {
     setButtonToastAnchor('timelockSmartWithdrawBtn');
@@ -1913,29 +1935,31 @@ export async function withdrawMultipleNFTsAndERC20sFromVault() {
         const totalFromCounter = (await withRpcRetry(() => vaultContract.stakedTokenCount(), 'stakedTokenCount')).toNumber();
         const stakedIds = await fetchAllStakedTokenIds(vaultContract);
 
-        if (stakedIds.length === 0) {
-            showButtonToast('info', 'Nothing to Withdraw', 'This vault has no staked NFTs.');
-            if (statusEl) statusEl.textContent = 'This vault has no staked NFTs.';
-            return;
-        }
-
-        if (totalFromCounter === stakedIds.length) {
-            showButtonToast('info', 'Vault Check', 'Same amount of NFTs staked as in vault. easy withdraw proceed.');
-        } else {
+        if (totalFromCounter !== stakedIds.length) {
             console.warn(`[Timelock] stakedTokenCount (${totalFromCounter}) does not match enumerated staked IDs (${stakedIds.length})`);
         }
 
-        const ranked = await fetchVaultPositionsRankedByValue(selectedVaultAddress, stakedIds);
-        const batch = ranked.slice(0, SMART_WITHDRAW_BATCH_SIZE);
-        const batchTokenIds = batch.map(pos => pos.tokenId);
-        const isAllPositions = stakedIds.length <= SMART_WITHDRAW_BATCH_SIZE;
-        const totalRuns = Math.ceil(stakedIds.length / SMART_WITHDRAW_BATCH_SIZE);
-        const nftListText = batchTokenIds.map(id => `#${id}`).join(', ');
+        // With nothing staked there's nothing to rank — skip straight to an
+        // empty tokenIds array so this run just claims reward balances.
+        let batchTokenIds = [];
+        let isAllPositions = true;
+        let totalRuns = 0;
+        let nftListText = '';
+        if (stakedIds.length > 0) {
+            const ranked = await fetchVaultPositionsRankedByValue(selectedVaultAddress, stakedIds);
+            const batch = ranked.slice(0, SMART_WITHDRAW_BATCH_SIZE);
+            batchTokenIds = batch.map(pos => pos.tokenId);
+            isAllPositions = stakedIds.length <= SMART_WITHDRAW_BATCH_SIZE;
+            totalRuns = Math.ceil(stakedIds.length / SMART_WITHDRAW_BATCH_SIZE);
+            nftListText = batchTokenIds.map(id => `#${id}`).join(', ');
+        }
 
-        const previewMsg = isAllPositions
-            ? `This is all ${stakedIds.length} staked NFT(s): ${nftListText}. One withdrawal empties the vault.`
-            : `${stakedIds.length} NFTs are staked — this is not all positions. Withdrawing the ${SMART_WITHDRAW_BATCH_SIZE} most valuable now (${nftListText}). You will need to run this ${totalRuns} times total (${SMART_WITHDRAW_BATCH_SIZE} at a time) to withdraw everything.`;
-        showButtonToast('info', isAllPositions ? 'All Positions' : 'Partial Withdrawal', previewMsg);
+        const previewMsg = stakedIds.length === 0
+            ? `This vault has no staked NFTs — this will just claim B0x / 0xBTC / WETH reward balances.`
+            : (isAllPositions
+                ? `This is all ${stakedIds.length} staked NFT(s): ${nftListText}. One withdrawal empties the vault.`
+                : `${stakedIds.length} NFTs are staked — this is not all positions. Withdrawing the ${SMART_WITHDRAW_BATCH_SIZE} most valuable now (${nftListText}). You will need to run this ${totalRuns} times total (${SMART_WITHDRAW_BATCH_SIZE} at a time) to withdraw everything.`);
+        showButtonToast('info', stakedIds.length === 0 ? 'Rewards Only' : (isAllPositions ? 'All Positions' : 'Partial Withdrawal'), previewMsg);
         if (statusEl) statusEl.textContent = previewMsg;
 
         const rewardTokens = [
@@ -1945,14 +1969,18 @@ export async function withdrawMultipleNFTsAndERC20sFromVault() {
         ];
 
         const vaultWriteContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
-        showButtonToast('info', 'Withdrawing', `Withdrawing NFTs ${nftListText}. Confirm in your wallet.`);
+        showButtonToast('info', 'Withdrawing', stakedIds.length === 0
+            ? 'Claiming reward tokens. Confirm in your wallet.'
+            : `Withdrawing NFTs ${nftListText}. Confirm in your wallet.`);
         const tx = await vaultWriteContract.withdraw_Multiple_NFTs_And_ERC20s(batchTokenIds, rewardTokens);
         await tx.wait();
 
         const remaining = stakedIds.length - batchTokenIds.length;
-        const successMsg = remaining > 0
-            ? `Withdrew NFTs ${nftListText} and claimed rewards. ${remaining} NFT(s) remain — run this ${Math.ceil(remaining / SMART_WITHDRAW_BATCH_SIZE)} more time(s) to finish.`
-            : `Withdrew NFTs ${nftListText} and claimed rewards. Vault is now empty of NFTs.`;
+        const successMsg = stakedIds.length === 0
+            ? `Claimed B0x / 0xBTC / WETH reward balances. This vault has no staked NFTs.`
+            : (remaining > 0
+                ? `Withdrew NFTs ${nftListText} and claimed rewards. ${remaining} NFT(s) remain — run this ${Math.ceil(remaining / SMART_WITHDRAW_BATCH_SIZE)} more time(s) to finish.`
+                : `Withdrew NFTs ${nftListText} and claimed rewards. Vault is now empty of NFTs.`);
         showButtonToast('success', 'Smart Withdrawal Complete!', successMsg);
         if (statusEl) statusEl.textContent = successMsg;
 
@@ -2112,6 +2140,230 @@ export async function superWithdrawAll() {
             showButtonToast('error', 'Super Withdrawal Failed', msg);
         } finally {
             enableBtn('timelockSuperWithdrawBtn');
+        }
+    } finally { clearButtonToastAnchor(); }
+}
+
+// ============================================
+// SUPER DESTROYER (EXPERIMENTAL — PERMANENT VAULT DESTRUCTION)
+// ============================================
+
+// Only worth offering once there are multiple vaults that are unlocked and
+// have nothing staked — a single one isn't worth the RPC round trip below.
+const SUPER_DESTROY_MIN_ZERO_STAKED_UNLOCKED_VAULTS = 2;
+
+// Above this, a vault has real, non-dust B0x sitting loose in it (deposited
+// but never staked) — not a candidate for this tool at all either way.
+const SUPER_DESTROY_MAX_LOOSE_B0X_WEI = '2000000000000000000'; // 2.0 B0x, 18 decimals
+
+// Cap on how many vaults get destroyed in one SuperDestroyer call — keeps a
+// single tx from growing unbounded when someone has a large pile of empty
+// vaults to clean up at once.
+const SUPER_DESTROY_MAX_VAULTS_PER_RUN = 22;
+
+/**
+ * Vaults that are unlocked with exactly 0.0 B0x staked — the only vaults
+ * SuperDestroyer ever bothers checking further. Cheap, in-memory filter over
+ * data loadUserVaults already fetched; no RPC calls here.
+ */
+function findZeroStakedUnlockedVaults() {
+    return userVaults.filter(v => !v.isLocked && (v.totalB0xStaked || 0) === 0);
+}
+
+/**
+ * Shows/hides and populates the experimental Super Destroyer section. Unlike
+ * the other Timelock sections this one is async: it only fetches each
+ * candidate vault's loose (unstaked) B0x balanceOf — via one small multicall
+ * — when there are multiple zero-staked unlocked vaults to justify it, since
+ * that's the only signal that decides whether a vault is safe to destroy.
+ * Sorts candidates into "destroyable" (0 loose B0x — safe) and
+ * "needs withdraw first" (some loose B0x under the 2.0 dust cap — warn and
+ * exclude from the batch so nothing gets destroyed out from under the user).
+ * Vaults with 2.0+ loose B0x are left out of both lists entirely. The
+ * destroyable list is further capped at SUPER_DESTROY_MAX_VAULTS_PER_RUN per
+ * transaction — any extra just wait for a follow-up run.
+ */
+async function renderSuperDestroySection() {
+    const section = document.getElementById('timelock-super-destroy-section');
+    const summaryEl = document.getElementById('timelock-super-destroy-summary');
+    if (!section || !summaryEl) return;
+
+    // SuperDestroyer checks each vault's owner() against the connected
+    // wallet itself, not the masquerade target — it has no way to act "as"
+    // someone else the way withdraw/deposit do. Destroying vaults while
+    // masquerading as another address would send a transaction that succeeds
+    // but skips every single vault (ownerOfVault != msg.sender every time),
+    // so there's no point offering this except when we're not masquerading,
+    // or masquerading as our own connected address.
+    const masqueradingAsSomeoneElse = !!masqueradeAddress &&
+        (!window.userAddress || masqueradeAddress.toLowerCase() !== window.userAddress.toLowerCase());
+    if (masqueradingAsSomeoneElse) {
+        section.style.display = 'none';
+        section.dataset.destroyableAddresses = '[]';
+        return;
+    }
+
+    const candidates = findZeroStakedUnlockedVaults();
+
+    if (candidates.length < SUPER_DESTROY_MIN_ZERO_STAKED_UNLOCKED_VAULTS) {
+        section.style.display = 'none';
+        section.dataset.destroyableAddresses = '[]';
+        return;
+    }
+
+    section.style.display = 'block';
+    summaryEl.innerHTML = '<p style="color:#aaa">Checking vault balances...</p>';
+
+    const myGeneration = loadGeneration;
+    const readProvider = await getTimelockProvider();
+    const erc20Iface = new ethers.utils.Interface(ERC20_MINIMAL_ABI);
+    const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, readProvider);
+
+    const calls = candidates.map(v => ({
+        target: tokenAddresses['B0x'],
+        allowFailure: true,
+        callData: erc20Iface.encodeFunctionData('balanceOf', [v.address])
+    }));
+
+    let results;
+    try {
+        results = await withRpcRetry(() => multicallContract.aggregate3(calls), 'SuperDestroyer B0x balanceOf multicall');
+    } catch (e) {
+        console.warn('[Timelock] SuperDestroyer balance multicall failed:', e);
+        if (myGeneration !== loadGeneration) return;
+        summaryEl.innerHTML = '<p style="color:#e55">Could not check vault balances. Try refreshing.</p>';
+        section.dataset.destroyableAddresses = '[]';
+        return;
+    }
+    if (myGeneration !== loadGeneration) return;
+
+    const maxLoose = ethers.BigNumber.from(SUPER_DESTROY_MAX_LOOSE_B0X_WEI);
+    const destroyable = [];
+    const needsWithdrawFirst = [];
+
+    for (let i = 0; i < candidates.length; i++) {
+        const res = results[i];
+        if (!res || !res.success || res.returnData === '0x') continue; // unknown balance — skip, don't guess
+        const [rawBal] = erc20Iface.decodeFunctionResult('balanceOf', res.returnData);
+        if (rawBal.isZero()) {
+            destroyable.push(candidates[i]);
+        } else if (rawBal.lt(maxLoose)) {
+            needsWithdrawFirst.push({ vault: candidates[i], rawBal });
+        }
+        // else: 2.0+ loose B0x sitting in a "0 staked" vault — leave out of both lists.
+    }
+
+    if (destroyable.length === 0 && needsWithdrawFirst.length === 0) {
+        section.style.display = 'none';
+        section.dataset.destroyableAddresses = '[]';
+        return;
+    }
+
+    // Cap how many actually go into this run's batch, even if more qualify —
+    // the rest just get picked up on the next click once these clear.
+    const destroyableThisRun = destroyable.slice(0, SUPER_DESTROY_MAX_VAULTS_PER_RUN);
+    const destroyableRemaining = destroyable.length - destroyableThisRun.length;
+
+    let html = '';
+    if (destroyableThisRun.length > 0) {
+        html += `<div style="margin-bottom:12px">Ready to destroy — <strong>${destroyableThisRun.length}</strong> unlocked vault${destroyableThisRun.length === 1 ? '' : 's'} with 0.0 B0x staked and nothing else in ${destroyableThisRun.length === 1 ? 'it' : 'them'} this run` +
+            (destroyableRemaining > 0
+                ? ` (capped at ${SUPER_DESTROY_MAX_VAULTS_PER_RUN} per transaction — ${destroyableRemaining} more empty vault${destroyableRemaining === 1 ? '' : 's'} found; run this again afterward to clear ${destroyableRemaining === 1 ? 'it' : 'them'} too)`
+                : '') +
+            `:</div>`;
+        html += destroyableThisRun.map(v => {
+            const short = v.address.slice(0, 8) + '...' + v.address.slice(-6);
+            return `<div class="timelock-vault-detail">${short} — empty</div>`;
+        }).join('');
+    }
+    if (needsWithdrawFirst.length > 0) {
+        html += `<div style="margin:12px 0;color:#f0a500">⚠️ ${needsWithdrawFirst.length} vault${needsWithdrawFirst.length === 1 ? '' : 's'} still ${needsWithdrawFirst.length === 1 ? 'has' : 'have'} loose B0x sitting in ${needsWithdrawFirst.length === 1 ? 'it' : 'them'} (deposited but never staked) — <strong>withdraw that first</strong>. Destroying it first won't lose the funds (the vault contract still exists and you still own it), but it'll disappear from this site for good — you'd have to interact with it directly (e.g. via BaseScan) to get them out afterward:</div>`;
+        html += needsWithdrawFirst.map(({ vault, rawBal }) => {
+            const short = vault.address.slice(0, 8) + '...' + vault.address.slice(-6);
+            const amt = parseFloat(ethers.utils.formatUnits(rawBal, 18));
+            return `<div class="timelock-vault-detail" style="color:#f0a500">${short} — ${amt.toFixed(4)} B0x loose, not withdrawn</div>`;
+        }).join('');
+    }
+
+    summaryEl.innerHTML = html;
+
+    // Cache the destroy-ready address list on the section itself so the
+    // button handler uses exactly what was just shown, rather than
+    // re-deriving it (and risking a race with a newer in-flight balance check).
+    section.dataset.destroyableAddresses = JSON.stringify(destroyableThisRun.map(v => v.address));
+
+    if (destroyableThisRun.length === 0) {
+        disableBtn('timelockSuperDestroyBtn', 'No Empty Vaults Ready');
+    } else {
+        enableBtn('timelockSuperDestroyBtn');
+    }
+}
+
+/**
+ * Fires the factory's experimental SuperDestroyer across the vaults
+ * renderSuperDestroySection() most recently classified as safe to destroy —
+ * unlocked, 0.0 B0x staked, 0 loose B0x. Permanent and irreversible, so this
+ * requires an explicit confirm() on top of the button already being disabled
+ * whenever nothing qualifies. Any vault the factory can't destroy (not
+ * actually owned by the caller, or fails its own unlock check) is skipped
+ * rather than failing the whole batch.
+ */
+export async function superDestroyEligibleVaults() {
+    setButtonToastAnchor('timelockSuperDestroyBtn');
+    try {
+        if (!window.walletConnected) await window.connectWallet();
+
+        // SuperDestroyer checks vault owner() against the connected wallet, not
+        // the masquerade target — while masquerading as someone else this would
+        // send a transaction that succeeds but destroys nothing.
+        if (masqueradeAddress && (!window.userAddress || masqueradeAddress.toLowerCase() !== window.userAddress.toLowerCase())) {
+            showButtonToast('error', 'Not Available While Masquerading', "SuperDestroyer only works on vaults owned by your connected wallet — it can't act on someone else's behalf. Clear masquerade mode first.");
+            return;
+        }
+
+        const section = document.getElementById('timelock-super-destroy-section');
+        let addrList = [];
+        try {
+            addrList = JSON.parse(section?.dataset.destroyableAddresses || '[]');
+        } catch {
+            addrList = [];
+        }
+
+        if (addrList.length === 0) {
+            showButtonToast('info', 'Nothing to Destroy', 'No empty vaults are currently ready for destruction.');
+            return;
+        }
+
+        const listText = addrList.map(a => `${a.slice(0, 8)}...${a.slice(-6)}`).join('\n');
+        const confirmed = window.confirm(
+            `⚠️ WARNING — Removing ${addrList.length === 1 ? 'This Vault' : 'These Vaults'} From This Site Forever\n\n` +
+            `${addrList.length === 1 ? 'This vault' : 'These vault contracts'} will be destroyed and will NEVER be shown on this site again:\n\n${listText}\n\n` +
+            `Each is unlocked with 0.0 B0x staked and 0 loose B0x, so nothing should be lost. The vault contract itself keeps existing on-chain and you keep full owner access to it — but only by interacting with it directly (e.g. via BaseScan's Read/Write Contract tabs). This site will never help you find or use it again after this.\n\n` +
+            `Are you absolutely sure you want to proceed?`
+        );
+        if (!confirmed) return;
+
+        disableBtn('timelockSuperDestroyBtn');
+
+        try {
+            showButtonToast('info', 'Destroying Vaults', `Destroying ${addrList.length} vault(s). Confirm in your wallet.`);
+
+            const factoryWriteContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, window.signer);
+            const tx = await factoryWriteContract.SuperDestroyer(addrList);
+            await tx.wait();
+
+            showButtonToast('success', 'Vaults Destroyed', `Processed ${addrList.length} vault(s). Any vault that wasn't actually owned by you or failed its own checks on-chain was skipped automatically.`);
+
+            if (selectedVaultAddress && addrList.includes(selectedVaultAddress)) {
+                resetVaultSelection();
+            }
+            await loadUserVaults();
+        } catch (err) {
+            console.error('superDestroyEligibleVaults error:', err);
+            const msg = decodeVaultError(err);
+            showButtonToast('error', 'Destruction Failed', msg);
+        } finally {
+            enableBtn('timelockSuperDestroyBtn');
         }
     } finally { clearButtonToastAnchor(); }
 }

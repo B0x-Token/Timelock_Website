@@ -811,6 +811,14 @@
                         <button class="btn-warning" id="timelockSuperWithdrawBtn" onclick="Timelock.superWithdrawAll()">Super Withdraw Now</button>
                     </div>
 
+                    <!-- Section 4c: Super Destroyer — experimental permanent vault destruction -->
+                    <div id="timelock-super-destroy-section" class="info-card3" style="display:none;border-left-color:#e55">
+                        <h2>💀 Experimental: Super Destroyer (Permanent)</h2>
+                        <p style="color:#f88"><strong>Permanent, on this site.</strong> Only ever looks at vaults that are unlocked with 0.0 B0x staked — the only case destroying one could make sense — and only checks their loose (unstaked) B0x balance once there are multiple of those. Vaults holding 0 loose B0x are destroyed, capped at 22 vaults per transaction; vaults holding a little are flagged so you can withdraw first instead. <strong>A destroyed vault is removed from this site forever and will never be shown here again — the vault contract itself still exists and you (the owner) retain full access to it directly (e.g. via BaseScan's Read/Write Contract tabs), but this UI will never help you find or use it again.</strong></p>
+                        <div id="timelock-super-destroy-summary" style="margin-bottom:16px;font-size:0.9em"></div>
+                        <button class="btn-warning" id="timelockSuperDestroyBtn" onclick="Timelock.superDestroyEligibleVaults()">Destroy Empty Vaults</button>
+                    </div>
+
                     <!-- Section 4: Vault Action Panel (shown when vault is selected) -->
                     <div id="timelock-vault-actions" style="display:none">
 
@@ -846,7 +854,7 @@
                                 ⚠️ <strong>Position count mismatch</strong> — this vault has fewer NFTs recorded (<span id="timelock-exit-mismatch-timelock-count2">0</span>) than are actually staked in the LP pool (<span id="timelock-exit-mismatch-pool-count2">0</span>). Smart Contract Withdrawal can't reach these — use <strong>this Smart Contract Withdrawl function and/or the Exit All Function below</strong>  to get all positions withdrawn from staking.
                             </div>
                             <p style="color:#f0a500">Only available after the vault unlocks. Withdraws the 20 most valuable staked NFTs in one transaction and claims B0x / 0xBTC / WETH rewards for them, returning everything to <span class="timelock-owner-wallet-phrase">your wallet</span>.</p>
-                            <p>Checks the vault's staked-NFT count first. If the vault has 20 or fewer NFTs staked, this one transaction empties it. If it has more (e.g. 40 NFTs), you'll need to run this multiple times — always the 2 most valuable remaining positions each time (40 NFTs = 2 runs).</p>
+                            <p>Checks the vault's staked-NFT count first. If the vault has 20 or fewer NFTs staked, this one transaction empties it. If it has more (e.g. 40 NFTs), you'll need to run this multiple times — always the 2 most valuable remaining positions each time (40 NFTs = 2 runs). Works with zero staked NFTs too — it'll just claim/transfer the B0x / 0xBTC / WETH reward balances sitting in the vault.</p>
                             <div id="timelock-smart-withdraw-status" style="margin-bottom:12px;font-size:0.9em;color:#aaa"></div>
                             <button class="btn-warning" id="timelockSmartWithdrawBtn" onclick="Timelock.withdrawMultipleNFTsAndERC20sFromVault()">Smart Withdraw Most Valuable NFTs</button>
                         </div>
@@ -956,7 +964,7 @@
                         </div>
 
                         <!-- Transfer Ownership -->
-                        <div class="info-card3">
+                        <div id="timelock-transfer-ownership-section" class="info-card3" style="display:none">
                             <h2>Transfer Vault Ownership</h2>
                             <p style="color:#f0a500">Only possible while the vault is still locked. Permanently transfers control to a new address. Costs a minimum of 50 B0x Total Value per Staked NFT positions in the timelock. (50 B0x * # NFTs) = (Your B0x needed + NFT B0x Value) = Success</p>
                             <div class="form-group">
