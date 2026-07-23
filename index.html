@@ -795,6 +795,13 @@
                         <h2 id="timelock-vaults-heading">Your Timelock Vaults</h2>
                         <div id="timelock-vaults-total" style="display:none;margin-bottom:12px;font-size:2em;color:#4caf50;font-weight:600"></div>
                         <button class="btn-primary" onclick="Timelock.loadUserVaults()" style="margin-bottom:12px">Refresh Vaults</button>
+                        <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                            <label for="timelock-vault-sort-select" style="font-size:0.9em;color:#aaa">Sort by:</label>
+                            <select id="timelock-vault-sort-select" onchange="Timelock.setVaultSortMode(this.value)" style="padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
+                                <option value="staked" selected>Most Staked B0x</option>
+                                <option value="unlock">Unlock Time (Soonest First)</option>
+                            </select>
+                        </div>
                         <div id="timelock-vault-search-wrap" style="display:none;margin-bottom:12px">
                             <input type="text" id="timelock-vault-search-input" placeholder="Search by vault address or staked NFT #..." oninput="Timelock.filterVaults(this.value)" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;box-sizing:border-box">
                         </div>
@@ -806,7 +813,7 @@
                     <!-- Section 4b: Super Withdrawer — experimental batch withdraw across vaults -->
                     <div id="timelock-super-withdraw-section" class="info-card3" style="display:none;border-left-color:#a855f7">
                         <h2>⚗️ Experimental: Super Withdraw (Batch)</h2>
-                        <p>Withdraws staked NFTs and claims B0x / 0xBTC / WETH rewards from <strong>multiple unlocked vaults in a single transaction</strong>, starting with your biggest stakers, capped at 10 NFTs total per run. Locked vaults are never touched. This calls a new, experimental factory function — if a vault fails to process, it's skipped automatically rather than failing the whole batch.</p>
+                        <p>Withdraws staked NFTs and claims B0x / 0xBTC / WETH rewards from <strong>multiple unlocked vaults in a single transaction</strong>, starting with your biggest stakers, capped at 6 vaults and 10 NFTs total per run. Locked vaults are never touched. This calls a new, experimental factory function — if a vault fails to process, it's skipped automatically rather than failing the whole batch.</p>
                         <div id="timelock-super-withdraw-summary" style="margin-bottom:16px;font-size:0.9em"></div>
                         <button class="btn-warning" id="timelockSuperWithdrawBtn" onclick="Timelock.superWithdrawAll()">Super Withdraw Now</button>
                     </div>

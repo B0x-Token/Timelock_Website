@@ -43,7 +43,7 @@ import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0x18C86f17227bb4a203d714cf8E05e276a0d54718";
+export const TIMELOCK_FACTORY_ADDRESS = "0xb59F4225A58Ef16C0e41b3bA96d487890B7E7e32";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 
 // Must match the factory's MAX_PAGE_SIZE constant.
@@ -358,6 +358,13 @@ let userVaults = []; // array of { address, unlockTime, isLocked, stakedTokenIds
 let masqueradeAddress = null; // when set, vaults are loaded for this address instead of window.userAddress
 let vaultSearchQuery = ''; // current text in the vault search box, used to filter rendered vault cards
 let singleVaultView = false; // true when userVaults holds a single direct-address search result, not the bulk list
+
+// Display-only sort for the rendered vault card list ('staked' | 'unlock').
+// userVaults itself always stays sorted most-B0x-staked-first (see the sort
+// in loadUserVaults) since SuperWithdrawer/SuperDestroyer's batch-picking
+// logic depends on that canonical order regardless of what the user is
+// currently looking at.
+let vaultSortMode = 'staked';
 
 // Bumped every time a new vault load/search starts. In-flight loadUserVaults
 // pagination checks this after each await and bails out silently if it no
@@ -1066,6 +1073,18 @@ export function filterVaults(query) {
     renderVaultCards(container);
 }
 
+/**
+ * Called from the sort <select>'s onchange handler. Only changes how the
+ * card list is displayed — userVaults itself keeps its canonical
+ * most-staked-first order for the Super Withdraw/Destroy batch logic.
+ */
+export function setVaultSortMode(mode) {
+    if (mode !== 'staked' && mode !== 'unlock') return;
+    vaultSortMode = mode;
+    const container = document.getElementById('timelock-vaults-container');
+    renderVaultCards(container);
+}
+
 // Converts a human-readable B0x amount into its 0xBTC equivalent using the
 // pool price ratio Timelock fetches for itself (see fetchPriceRatioOnce),
 // falling back to window.ratioz if that hasn't resolved yet for some reason.
@@ -1134,8 +1153,18 @@ function renderVaultCards(container) {
         return;
     }
 
+    // Display-only re-sort — doesn't touch userVaults itself (see vaultSortMode).
+    const sortedVaults = visibleVaults.slice().sort((a, b) => {
+        if (vaultSortMode === 'unlock') {
+            return a.secondsLeft - b.secondsLeft; // soonest-to-unlock first
+        }
+        const b0xDiff = (b.totalB0xStaked || 0) - (a.totalB0xStaked || 0);
+        if (b0xDiff !== 0) return b0xDiff;
+        return a.secondsLeft - b.secondsLeft;
+    });
+
     let html = '';
-    for (const vault of visibleVaults) {
+    for (const vault of sortedVaults) {
         const lockLabel = vault.isLocked
             ? `<span style="color:#f0a500">LOCKED — unlocks in ${formatCountdown(vault.secondsLeft)}</span>`
             : `<span style="color:#4caf50">UNLOCKED</span>`;
@@ -2019,6 +2048,11 @@ export async function withdrawMultipleNFTsAndERC20sFromVault() {
 // has many heavily-staked vaults unlocked at once.
 const SUPER_WITHDRAW_NFT_CAP = 10;
 
+// Cap on how many separate vaults get touched in one SuperWithdrawer call,
+// independent of the NFT cap above — a vault call is its own try/catch inside
+// the factory loop, so this also bounds how much per-vault overhead one tx pays.
+const SUPER_WITHDRAW_MAX_VAULTS_PER_RUN = 7;
+
 // Only worth surfacing once someone has enough unlocked vaults that clicking
 // through them one at a time would actually be tedious.
 const SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS = 4;
@@ -2028,23 +2062,30 @@ const SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS = 4;
  * call would cover right now. userVaults is already sorted most-B0x-staked-first
  * (see the sort in loadUserVaults), so this greedily fills the NFT cap from the
  * biggest stakers down, truncating rather than skipping the vault that would
- * push the total over the cap.
+ * push the total over the cap, and stops after SUPER_WITHDRAW_MAX_VAULTS_PER_RUN
+ * vaults regardless of how much of the NFT cap is left.
  */
 function computeSuperWithdrawBatch() {
     const unlockedVaults = userVaults.filter(v => !v.isLocked);
+    const emptyUnlockedVaults = unlockedVaults.filter(v => !v.stakedTokenIds || v.stakedTokenIds.length === 0);
+    const stakedUnlockedVaults = unlockedVaults.filter(v => v.stakedTokenIds && v.stakedTokenIds.length > 0);
+
     const included = [];
     let remaining = SUPER_WITHDRAW_NFT_CAP;
 
-    for (const vault of unlockedVaults) {
+    for (const vault of stakedUnlockedVaults) {
         if (remaining <= 0) break;
-        if (!vault.stakedTokenIds || vault.stakedTokenIds.length === 0) continue;
+        if (included.length >= SUPER_WITHDRAW_MAX_VAULTS_PER_RUN) break;
         const take = vault.stakedTokenIds.slice(0, remaining);
         included.push({ address: vault.address, tokenIds: take, totalInVault: vault.stakedTokenIds.length });
         remaining -= take.length;
     }
 
     const totalNFTs = included.reduce((sum, v) => sum + v.tokenIds.length, 0);
-    return { unlockedVaults, included, totalNFTs };
+    // Only vaults that actually have staked NFTs can be "left out by the cap" —
+    // vaults with nothing staked were never candidates in the first place.
+    const capSkippedCount = stakedUnlockedVaults.length - included.length;
+    return { unlockedVaults, emptyUnlockedVaults, included, totalNFTs, capSkippedCount };
 }
 
 /**
@@ -2056,7 +2097,7 @@ function renderSuperWithdrawSection() {
     const summaryEl = document.getElementById('timelock-super-withdraw-summary');
     if (!section || !summaryEl) return;
 
-    const { unlockedVaults, included, totalNFTs } = computeSuperWithdrawBatch();
+    const { unlockedVaults, emptyUnlockedVaults, included, totalNFTs, capSkippedCount } = computeSuperWithdrawBatch();
 
     if (unlockedVaults.length < SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS || included.length === 0) {
         section.style.display = 'none';
@@ -2064,7 +2105,6 @@ function renderSuperWithdrawSection() {
     }
 
     section.style.display = 'block';
-    const skipped = unlockedVaults.length - included.length;
     const listHtml = included.map(v => {
         const short = v.address.slice(0, 8) + '...' + v.address.slice(-6);
         const countLabel = v.tokenIds.length < v.totalInVault
@@ -2073,12 +2113,18 @@ function renderSuperWithdrawSection() {
         return `<div class="timelock-vault-detail">${short} — ${countLabel}</div>`;
     }).join('');
 
+    const notes = [];
+    if (capSkippedCount > 0) {
+        notes.push(`${capSkippedCount} more unlocked vault${capSkippedCount === 1 ? '' : 's'} with staked NFTs won't fit in this run (capped at ${SUPER_WITHDRAW_MAX_VAULTS_PER_RUN} vaults / ${SUPER_WITHDRAW_NFT_CAP} NFTs per transaction) — run it again afterward to pick up the rest.`);
+    }
+    if (emptyUnlockedVaults.length > 0) {
+        notes.push(`${emptyUnlockedVaults.length} other unlocked vault${emptyUnlockedVaults.length === 1 ? '' : 's'} ${emptyUnlockedVaults.length === 1 ? 'has' : 'have'} nothing staked, so ${emptyUnlockedVaults.length === 1 ? "it isn't" : "they aren't"} part of this batch.`);
+    }
+
     summaryEl.innerHTML =
         `<div style="margin-bottom:8px">This will withdraw <strong>${totalNFTs} NFT${totalNFTs === 1 ? '' : 's'}</strong> and claim B0x / 0xBTC / WETH rewards ` +
         `from <strong>${included.length}</strong> of your <strong>${unlockedVaults.length}</strong> unlocked vaults in one transaction, biggest stakers first.` +
-        (skipped > 0
-            ? ` ${skipped} more unlocked vault${skipped === 1 ? '' : 's'} won't fit under the ${SUPER_WITHDRAW_NFT_CAP}-NFT cap this run — run it again afterward to pick up the rest.`
-            : '') +
+        (notes.length > 0 ? ' ' + notes.join(' ') : '') +
         `</div>${listHtml}`;
 }
 
