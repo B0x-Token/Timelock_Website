@@ -841,7 +841,7 @@
                             <div id="timelock-stake-masquerade-warning" style="display:none;margin-bottom:12px;padding:10px 14px;background:#3a0a0a;border:1px solid #e55;border-radius:8px;font-size:0.9em;line-height:1.5;color:#f88">
                                 ⚠️ <strong>Masquerade Mode Active</strong> — You are viewing someone else's vault. Staking will deposit <strong>your NFT</strong> into their vault. You will not be able to recover it unless you also control that wallet.
                             </div>
-                            <p>Approves the vault to receive your NFT, then stakes it through the vault to the LP pool. Rewards accumulate to the vault while locked. <span id="timelock-stake-masquerade-cost" style="display:none">Costs a minimum of 50 B0x, charges 50 B0x value to stake the NFT for someone else (NFT Value + Your B0x = 50 B0x = Success).</span></p>
+                            <p>Approves the vault to receive your NFT, then stakes it through the vault to the LP pool. Rewards accumulate to the vault while locked. <span id="timelock-stake-masquerade-cost" style="display:none">Costs a minimum of <span class="timelock-fee-per-position">50</span> B0x, charges <span class="timelock-fee-per-position">50</span> B0x value to stake the NFT for someone else (NFT Value + Your B0x = <span class="timelock-fee-per-position">50</span> B0x = Success).</span></p>
                             <div class="form-group">
                                 <label>Select NFT Position to Stake</label>
                                 <select id="timelock-nft-select" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
@@ -973,7 +973,7 @@
                         <!-- Transfer Ownership -->
                         <div id="timelock-transfer-ownership-section" class="info-card3" style="display:none">
                             <h2>Transfer Vault Ownership</h2>
-                            <p style="color:#f0a500">Only possible while the vault is still locked. Permanently transfers control to a new address. Costs a minimum of 50 B0x Total Value per Staked NFT positions in the timelock. (50 B0x * # NFTs) = (Your B0x needed + NFT B0x Value) = Success</p>
+                            <p style="color:#f0a500">Only possible while the vault is still locked. Permanently transfers control to a new address. Costs a minimum of <span class="timelock-fee-per-position">50</span> B0x Total Value per Staked NFT positions in the timelock. (<span class="timelock-fee-per-position">50</span> B0x * # NFTs) = (Your B0x needed + NFT B0x Value) = Success</p>
                             <div class="form-group">
                                 <label>New Owner Address</label>
                                 <input type="text" id="timelock-new-owner-input" placeholder="0x..." style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">

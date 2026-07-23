@@ -43,7 +43,7 @@ import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0x504F2E7D3A16e9e6A7E009976d243a1AFCD7dEbE";
+export const TIMELOCK_FACTORY_ADDRESS = "0xE1B866e6C19050EceE49716A059c4aD0304901d1";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 
 // Must match the factory's MAX_PAGE_SIZE constant.
@@ -97,7 +97,7 @@ const TIMELOCK_FACTORY_ABI = [
     },
     {
         "inputs": [{ "internalType": "address payable", "name": "vault", "type": "address" }],
-        "name": "computeVaultMetric",
+        "name": "queryFeeForVaultMetric",
         "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
         "stateMutability": "view",
         "type": "function"
@@ -134,6 +134,13 @@ const TIMELOCK_FACTORY_ABI = [
         "name": "SuperDestroyer",
         "outputs": [],
         "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "AmountWeOWE_PER_POSITION2",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
         "type": "function"
     }
 ];
@@ -494,51 +501,95 @@ async function getTimelockProvider() {
 }
 
 // ============================================
-// B0x/0xBTC PRICE RATIO (for the "Total 0xBTC Staked" display)
+// STATIC PAGE-LOAD DATA: B0x/0xBTC PRICE RATIO + PER-POSITION B0x FEE
 // ============================================
 
-// Fetched once per page load via Multicall3 and cached — the ratio doesn't
-// move fast enough to justify re-fetching on every vault refresh, and this
-// way the Timelock tab doesn't depend on window.ratioz having already been
-// populated by the swap/positions widgets elsewhere in the app.
+// Both of these are read-only values that don't depend on any specific vault
+// or account, so they're fetched together in a single Multicall3 aggregate3
+// batch (one RPC round trip instead of two) and cached once per page load:
+//  - price ratio: for the "Total 0xBTC Staked" display, doesn't move fast
+//    enough to justify re-fetching on every vault refresh.
+//  - AmountWeOWE_PER_POSITION2: the factory's per-position anti-spam fee,
+//    adjusted automatically on-chain, so the frontend reads it live instead
+//    of hardcoding it. Only used for the approve-amount estimate and display
+//    copy — approveIfNeeded grants unlimited allowance and the vault/factory
+//    pull the real current fee at tx time regardless of what's cached here.
 let _cachedPriceRatio = null;
-let _priceRatioFetching = null;
+let _cachedFeePerPositionB0x = null;
+let _staticDataFetching = null;
+const DEFAULT_FEE_PER_POSITION_B0x = 50; // fallback if the RPC call fails
 
-async function fetchPriceRatioOnce() {
-    if (_cachedPriceRatio) return _cachedPriceRatio;
-    if (_priceRatioFetching) return _priceRatioFetching;
+async function fetchStaticTimelockDataOnce() {
+    if (_cachedPriceRatio !== null && _cachedFeePerPositionB0x !== null) {
+        return { priceRatio: _cachedPriceRatio, feePerPosition: _cachedFeePerPositionB0x };
+    }
+    if (_staticDataFetching) return _staticDataFetching;
 
-    _priceRatioFetching = (async () => {
+    _staticDataFetching = (async () => {
         try {
             const provider = await getTimelockProvider();
             const swapperInterface = new ethers.utils.Interface(SWAPPER_PRICE_RATIO_ABI);
+            const factoryInterface = new ethers.utils.Interface(TIMELOCK_FACTORY_ABI);
             const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, provider);
 
-            const calls = [{
-                target: contractAddress_Swapper,
-                allowFailure: true,
-                callData: swapperInterface.encodeFunctionData('getPriceRatio', [tokenAddresses['B0x'], tokenAddresses['0xBTC'], hookAddress])
-            }];
+            const calls = [
+                {
+                    target: contractAddress_Swapper,
+                    allowFailure: true,
+                    callData: swapperInterface.encodeFunctionData('getPriceRatio', [tokenAddresses['B0x'], tokenAddresses['0xBTC'], hookAddress])
+                },
+                {
+                    target: TIMELOCK_FACTORY_ADDRESS,
+                    allowFailure: true,
+                    callData: factoryInterface.encodeFunctionData('AmountWeOWE_PER_POSITION2')
+                }
+            ];
 
-            const results = await withRpcRetry(() => multicallContract.aggregate3(calls), 'multicall getPriceRatio');
-            if (!results[0].success) {
+            const results = await withRpcRetry(() => multicallContract.aggregate3(calls), 'multicall getPriceRatio + AmountWeOWE_PER_POSITION2');
+
+            if (results[0].success) {
+                _cachedPriceRatio = swapperInterface.decodeFunctionResult('getPriceRatio', results[0].returnData)[0];
+                window.ratioz = _cachedPriceRatio; // shared global other widgets already read
+            } else {
                 console.warn('[Timelock] getPriceRatio call failed');
-                return null;
             }
 
-            const decoded = swapperInterface.decodeFunctionResult('getPriceRatio', results[0].returnData);
-            _cachedPriceRatio = decoded[0];
-            window.ratioz = _cachedPriceRatio; // shared global other widgets already read
-            return _cachedPriceRatio;
+            if (results[1].success) {
+                const feeBN = factoryInterface.decodeFunctionResult('AmountWeOWE_PER_POSITION2', results[1].returnData)[0];
+                _cachedFeePerPositionB0x = parseFloat(ethers.utils.formatUnits(feeBN, 18));
+            } else {
+                console.warn('[Timelock] AmountWeOWE_PER_POSITION2 call failed');
+                _cachedFeePerPositionB0x = DEFAULT_FEE_PER_POSITION_B0x;
+            }
+
+            return { priceRatio: _cachedPriceRatio, feePerPosition: _cachedFeePerPositionB0x };
         } catch (err) {
-            console.error('[Timelock] fetchPriceRatioOnce error:', err);
-            return null;
+            console.error('[Timelock] fetchStaticTimelockDataOnce error:', err);
+            return { priceRatio: _cachedPriceRatio, feePerPosition: _cachedFeePerPositionB0x || DEFAULT_FEE_PER_POSITION_B0x };
         } finally {
-            _priceRatioFetching = null;
+            _staticDataFetching = null;
         }
     })();
 
-    return _priceRatioFetching;
+    return _staticDataFetching;
+}
+
+async function fetchPriceRatioOnce() {
+    return (await fetchStaticTimelockDataOnce()).priceRatio;
+}
+
+async function fetchFeePerPositionB0x() {
+    return (await fetchStaticTimelockDataOnce()).feePerPosition;
+}
+
+/**
+ * Fills in every ".timelock-fee-per-position" span with the live on-chain fee.
+ */
+function _renderFeePerPositionDisplays(fee) {
+    const feeStr = Number.isInteger(fee) ? String(fee) : fee.toFixed(2);
+    document.querySelectorAll('.timelock-fee-per-position').forEach(el => {
+        el.textContent = feeStr;
+    });
 }
 
 // ============================================
@@ -606,6 +657,7 @@ async function fetchAllStakedTokenIds(vaultContract) {
 export function loadTimelockPage() {
     renderAllowedNFTs();
     _updateMasqueradeBanner();
+    fetchFeePerPositionB0x().then(_renderFeePerPositionDisplays);
     if (window.walletConnected || masqueradeAddress) {
         loadUserVaults();
     }
@@ -1650,18 +1702,21 @@ export async function stakeNFTToVault() {
         return;
     }
 
-    // Anti-spam requires the vault to hold at least 100 B0x, but only when staking
-    // into someone else's vault via masquerade — depositing into your own vault
-    // costs nothing. The position being staked already carries some B0x liquidity,
-    // so we only need to approve the shortfall: 100 minus the B0x already in this
-    // position (shown as "~" since it's an approximate minimum, not an exact figure).
+    // Anti-spam requires the vault to hold at least AmountWeOWE_PER_POSITION2 worth
+    // of B0x (read live from the factory, since that fee adjusts automatically
+    // on-chain), but only when staking into someone else's vault via masquerade —
+    // depositing into your own vault costs nothing. The position being staked
+    // already carries some B0x liquidity, so we only need to approve the
+    // shortfall: the fee minus the B0x already in this position (shown as "~"
+    // since it's an approximate minimum, not an exact figure).
     const stakePos = positionData[`position_${tokenId}`];
     let positionB0xAmount = 0;
     if (stakePos) {
         if (stakePos.tokenA === 'B0x') positionB0xAmount = parseFloat(stakePos.currentTokenA) || 0;
         else if (stakePos.tokenB === 'B0x') positionB0xAmount = parseFloat(stakePos.currentTokenB) || 0;
     }
-    const minB0xNeeded = masqueradeAddress ? Math.max(0, 50 - positionB0xAmount) : 0;
+    const feePerPosition = masqueradeAddress ? await fetchFeePerPositionB0x() : 0;
+    const minB0xNeeded = masqueradeAddress ? Math.max(0, feePerPosition - positionB0xAmount) : 0;
     const minB0xNeededBN = ethers.utils.parseUnits(minB0xNeeded.toFixed(18), 18);
 
     if (masqueradeAddress) {
@@ -2440,16 +2495,16 @@ export async function transferVaultOwnership() {
 
     // The factory charges an anti-spam fee (in B0x) for transferring ownership of
     // small/low-value vaults, to discourage spamming the vault registry with junk
-    // transfers. computeVaultMetric already returns the fee pre-scaled to wei
+    // transfers. queryFeeForVaultMetric already returns the fee pre-scaled to wei
     // (18 decimals) — approve it as-is, don't rescale.
     let requiredFeeAmount = ethers.BigNumber.from(0);
     try {
         const provider = await getTimelockProvider();
         const factoryContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, provider);
-        const metric = await factoryContract.computeVaultMetric(selectedVaultAddress);
+        const metric = await factoryContract.queryFeeForVaultMetric(selectedVaultAddress);
         requiredFeeAmount = ethers.BigNumber.from(metric);
     } catch (err) {
-        console.error('computeVaultMetric error:', err);
+        console.error('queryFeeForVaultMetric error:', err);
         showButtonToast('error', 'Failed', 'Could not compute the anti-spam fee for this vault. Try again.');
         return;
     }
