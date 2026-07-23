@@ -2127,30 +2127,50 @@ const SUPER_WITHDRAW_LOOSE_SWEEP_NFT_THRESHOLD = 6;
  */
 async function findVaultsWithLooseB0xBalance(vaults) {
     if (vaults.length === 0) return [];
-    try {
-        const readProvider = await getTimelockProvider();
-        const erc20Iface = new ethers.utils.Interface(ERC20_MINIMAL_ABI);
-        const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, readProvider);
 
-        const calls = vaults.map(v => ({
+    const readProvider = await getTimelockProvider();
+    const erc20Iface = new ethers.utils.Interface(ERC20_MINIMAL_ABI);
+    const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, readProvider);
+
+    const found = [];
+    // Batch in the same page size loadUserVaults uses for its own multicalls
+    // (VAULT_PAGE_SIZE), so a large pile of empty vaults can't force one
+    // unbounded RPC call.
+    for (let batchStart = 0; batchStart < vaults.length; batchStart += VAULT_PAGE_SIZE) {
+        const batch = vaults.slice(batchStart, batchStart + VAULT_PAGE_SIZE);
+        const calls = batch.map(v => ({
             target: tokenAddresses['B0x'],
             allowFailure: true,
             callData: erc20Iface.encodeFunctionData('balanceOf', [v.address])
         }));
-        const results = await withRpcRetry(() => multicallContract.aggregate3(calls), 'SuperWithdrawer loose B0x balanceOf multicall');
 
-        const found = [];
-        for (let i = 0; i < vaults.length; i++) {
+        let results;
+        try {
+            results = await withRpcRetry(
+                () => multicallContract.aggregate3(calls),
+                `SuperWithdrawer loose B0x balanceOf multicall [${batchStart}, ${batchStart + batch.length})`
+            );
+        } catch (e) {
+            console.warn(`[Timelock] SuperWithdrawer loose B0x balance check failed for batch [${batchStart}, ${batchStart + batch.length}):`, e);
+            continue;
+        }
+
+        for (let i = 0; i < batch.length; i++) {
             const res = results[i];
             if (!res || !res.success || res.returnData === '0x') continue;
             const [rawBal] = erc20Iface.decodeFunctionResult('balanceOf', res.returnData);
-            if (!rawBal.isZero()) found.push(vaults[i]);
+            if (!rawBal.isZero()) found.push({ ...batch[i], looseB0xBalance: rawBal });
         }
-        return found;
-    } catch (e) {
-        console.warn('[Timelock] SuperWithdrawer loose B0x balance check failed:', e);
-        return [];
+
+        // Small breather between chunks so a big pile of empty vaults doesn't
+        // hammer the RPC with back-to-back multicalls.
+        if (batchStart + VAULT_PAGE_SIZE < vaults.length) await sleep(500);
     }
+
+    // Largest loose B0x balance first — if the per-run vault cap ends up
+    // truncating this list, the biggest balances are the ones that make it in.
+    found.sort((a, b) => (a.looseB0xBalance.eq(b.looseB0xBalance) ? 0 : a.looseB0xBalance.gt(b.looseB0xBalance) ? -1 : 1));
+    return found;
 }
 
 /**
