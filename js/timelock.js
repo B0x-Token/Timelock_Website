@@ -892,7 +892,7 @@ export async function loadUserVaults() {
                 : 'You';
             container.innerHTML = `<p style="color:#aaa">${who} have no timelock vaults yet.</p>`;
             userVaults = [];
-            renderSuperWithdrawSection();
+            await renderSuperWithdrawSection();
             await renderSuperDestroySection();
             // The previously selected vault (e.g. one just transferred away) no
             // longer belongs to this account — hide its stale actions panel
@@ -1015,7 +1015,7 @@ export async function loadUserVaults() {
         await priceRatioPromise;
         if (myGeneration !== loadGeneration) return;
         renderVaultCards(container);
-        renderSuperWithdrawSection();
+        await renderSuperWithdrawSection();
         await renderSuperDestroySection();
     } catch (err) {
         if (myGeneration !== loadGeneration) return;
@@ -1091,7 +1091,7 @@ async function searchVaultByAddress(vaultAddress) {
         }];
         singleVaultView = true;
         renderVaultCards(container);
-        renderSuperWithdrawSection();
+        await renderSuperWithdrawSection();
         await renderSuperDestroySection();
     } catch (err) {
         if (myGeneration !== loadGeneration) return;
@@ -2112,6 +2112,47 @@ const SUPER_WITHDRAW_MAX_VAULTS_PER_RUN = 7;
 // through them one at a time would actually be tedious.
 const SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS = 2;
 
+// Vaults with nothing staked are only worth adding to a SuperWithdrawer batch
+// to sweep their loose reward-token balance when the batch is otherwise thin —
+// once the NFT-driven portion already has this many NFTs going out, that's
+// enough for one run and the empty vaults can wait for a follow-up click.
+const SUPER_WITHDRAW_LOOSE_SWEEP_NFT_THRESHOLD = 6;
+
+/**
+ * Multicall-checks each given vault's loose (unstaked) B0x balanceOf, returning
+ * only the ones with a non-zero balance. Mirrors the balance check
+ * renderSuperDestroySection already does before offering to destroy a vault,
+ * just without the dust bucketing — here any non-zero balance is enough to be
+ * worth sweeping out via SuperWithdrawer's ERC20 path.
+ */
+async function findVaultsWithLooseB0xBalance(vaults) {
+    if (vaults.length === 0) return [];
+    try {
+        const readProvider = await getTimelockProvider();
+        const erc20Iface = new ethers.utils.Interface(ERC20_MINIMAL_ABI);
+        const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, readProvider);
+
+        const calls = vaults.map(v => ({
+            target: tokenAddresses['B0x'],
+            allowFailure: true,
+            callData: erc20Iface.encodeFunctionData('balanceOf', [v.address])
+        }));
+        const results = await withRpcRetry(() => multicallContract.aggregate3(calls), 'SuperWithdrawer loose B0x balanceOf multicall');
+
+        const found = [];
+        for (let i = 0; i < vaults.length; i++) {
+            const res = results[i];
+            if (!res || !res.success || res.returnData === '0x') continue;
+            const [rawBal] = erc20Iface.decodeFunctionResult('balanceOf', res.returnData);
+            if (!rawBal.isZero()) found.push(vaults[i]);
+        }
+        return found;
+    } catch (e) {
+        console.warn('[Timelock] SuperWithdrawer loose B0x balance check failed:', e);
+        return [];
+    }
+}
+
 /**
  * Picks which unlocked vaults (and which of their staked NFTs) a SuperWithdrawer
  * call would cover right now. userVaults is already sorted most-B0x-staked-first
@@ -2119,8 +2160,15 @@ const SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS = 2;
  * biggest stakers down, truncating rather than skipping the vault that would
  * push the total over the cap, and stops after SUPER_WITHDRAW_MAX_VAULTS_PER_RUN
  * vaults regardless of how much of the NFT cap is left.
+ *
+ * Once that NFT-driven portion is picked, and only while the batch is still
+ * thin (under SUPER_WITHDRAW_LOOSE_SWEEP_NFT_THRESHOLD total NFTs) and there's
+ * still room under the per-run vault cap, this also multicall-checks the
+ * unlocked vaults with nothing staked for a loose B0x balance and folds in any
+ * that have one — with an empty tokenIds entry, so the same transaction just
+ * claims their B0x / 0xBTC / WETH reward balances alongside the NFT withdrawals.
  */
-function computeSuperWithdrawBatch() {
+async function computeSuperWithdrawBatch() {
     const unlockedVaults = userVaults.filter(v => !v.isLocked);
     const emptyUnlockedVaults = unlockedVaults.filter(v => !v.stakedTokenIds || v.stakedTokenIds.length === 0);
     const stakedUnlockedVaults = unlockedVaults.filter(v => v.stakedTokenIds && v.stakedTokenIds.length > 0);
@@ -2140,19 +2188,30 @@ function computeSuperWithdrawBatch() {
     // Only vaults that actually have staked NFTs can be "left out by the cap" —
     // vaults with nothing staked were never candidates in the first place.
     const capSkippedCount = stakedUnlockedVaults.length - included.length;
-    return { unlockedVaults, emptyUnlockedVaults, included, totalNFTs, capSkippedCount };
+
+    let sweptEmptyVaults = [];
+    if (totalNFTs < SUPER_WITHDRAW_LOOSE_SWEEP_NFT_THRESHOLD && included.length < SUPER_WITHDRAW_MAX_VAULTS_PER_RUN && emptyUnlockedVaults.length > 0) {
+        const withBalance = await findVaultsWithLooseB0xBalance(emptyUnlockedVaults);
+        const roomForVaults = SUPER_WITHDRAW_MAX_VAULTS_PER_RUN - included.length;
+        sweptEmptyVaults = withBalance.slice(0, roomForVaults);
+        for (const vault of sweptEmptyVaults) {
+            included.push({ address: vault.address, tokenIds: [], totalInVault: 0, looseSweepOnly: true });
+        }
+    }
+
+    return { unlockedVaults, emptyUnlockedVaults, included, totalNFTs, capSkippedCount, sweptEmptyVaults };
 }
 
 /**
  * Shows/hides and populates the experimental Super Withdraw section based on
  * the current userVaults list. Called anywhere userVaults is (re)loaded.
  */
-function renderSuperWithdrawSection() {
+async function renderSuperWithdrawSection() {
     const section = document.getElementById('timelock-super-withdraw-section');
     const summaryEl = document.getElementById('timelock-super-withdraw-summary');
     if (!section || !summaryEl) return;
 
-    const { unlockedVaults, emptyUnlockedVaults, included, totalNFTs, capSkippedCount } = computeSuperWithdrawBatch();
+    const { unlockedVaults, emptyUnlockedVaults, included, totalNFTs, capSkippedCount, sweptEmptyVaults } = await computeSuperWithdrawBatch();
 
     if (unlockedVaults.length < SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS || included.length === 0) {
         section.style.display = 'none';
@@ -2162,9 +2221,11 @@ function renderSuperWithdrawSection() {
     section.style.display = 'block';
     const listHtml = included.map(v => {
         const short = v.address.slice(0, 8) + '...' + v.address.slice(-6);
-        const countLabel = v.tokenIds.length < v.totalInVault
-            ? `${v.tokenIds.length} of ${v.totalInVault} NFTs`
-            : `${v.tokenIds.length} NFT${v.tokenIds.length === 1 ? '' : 's'}`;
+        const countLabel = v.looseSweepOnly
+            ? 'reward tokens only (nothing staked)'
+            : (v.tokenIds.length < v.totalInVault
+                ? `${v.tokenIds.length} of ${v.totalInVault} NFTs`
+                : `${v.tokenIds.length} NFT${v.tokenIds.length === 1 ? '' : 's'}`);
         return `<div class="timelock-vault-detail">${short} — ${countLabel}</div>`;
     }).join('');
 
@@ -2172,8 +2233,12 @@ function renderSuperWithdrawSection() {
     if (capSkippedCount > 0) {
         notes.push(`${capSkippedCount} more unlocked vault${capSkippedCount === 1 ? '' : 's'} with staked NFTs won't fit in this run (capped at ${SUPER_WITHDRAW_MAX_VAULTS_PER_RUN} vaults / ${SUPER_WITHDRAW_NFT_CAP} NFTs per transaction) — run it again afterward to pick up the rest.`);
     }
-    if (emptyUnlockedVaults.length > 0) {
-        notes.push(`${emptyUnlockedVaults.length} other unlocked vault${emptyUnlockedVaults.length === 1 ? '' : 's'} ${emptyUnlockedVaults.length === 1 ? 'has' : 'have'} nothing staked, so ${emptyUnlockedVaults.length === 1 ? "it isn't" : "they aren't"} part of this batch.`);
+    if (sweptEmptyVaults.length > 0) {
+        notes.push(`${sweptEmptyVaults.length} unlocked vault${sweptEmptyVaults.length === 1 ? '' : 's'} with nothing staked ${sweptEmptyVaults.length === 1 ? 'has' : 'have'} a loose B0x balance, so ${sweptEmptyVaults.length === 1 ? "it's" : "they're"} included too, just to claim B0x / 0xBTC / WETH rewards.`);
+    }
+    const stillEmpty = emptyUnlockedVaults.length - sweptEmptyVaults.length;
+    if (stillEmpty > 0) {
+        notes.push(`${stillEmpty} other unlocked vault${stillEmpty === 1 ? '' : 's'} ${stillEmpty === 1 ? 'has' : 'have'} nothing staked and no loose B0x, so ${stillEmpty === 1 ? "it isn't" : "they aren't"} part of this batch.`);
     }
 
     summaryEl.innerHTML =
@@ -2195,7 +2260,7 @@ export async function superWithdrawAll() {
     try {
         if (!window.walletConnected) await window.connectWallet();
 
-        const { included, totalNFTs } = computeSuperWithdrawBatch();
+        const { included, totalNFTs } = await computeSuperWithdrawBatch();
         if (included.length === 0) {
             showButtonToast('info', 'Nothing to Withdraw', 'No unlocked vaults with staked NFTs right now.');
             return;
@@ -2213,7 +2278,10 @@ export async function superWithdrawAll() {
             const tokenIdsArg = included.map(v => v.tokenIds);
             const erc20sArg = included.map(() => rewardTokens);
 
-            showButtonToast('info', 'Super Withdrawing', `Withdrawing ${totalNFTs} NFT(s) across ${included.length} vault(s). Confirm in your wallet.`);
+            const withdrawMsg = totalNFTs > 0
+                ? `Withdrawing ${totalNFTs} NFT(s) across ${included.length} vault(s). Confirm in your wallet.`
+                : `Claiming B0x / 0xBTC / WETH rewards from ${included.length} vault(s). Confirm in your wallet.`;
+            showButtonToast('info', 'Super Withdrawing', withdrawMsg);
 
             const factoryWriteContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, window.signer);
             const tx = await factoryWriteContract.SuperWithdrawer(contractsToWithdrawFrom, tokenIdsArg, erc20sArg);
