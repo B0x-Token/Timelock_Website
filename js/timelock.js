@@ -43,7 +43,7 @@ import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0xE1B866e6C19050EceE49716A059c4aD0304901d1";
+export const TIMELOCK_FACTORY_ADDRESS = "0x66194F5527102ade749f9bE950A30cCCD9926B91";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 
 // Must match the factory's MAX_PAGE_SIZE constant.
