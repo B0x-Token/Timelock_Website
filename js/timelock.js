@@ -43,7 +43,7 @@ import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0xb59F4225A58Ef16C0e41b3bA96d487890B7E7e32";
+export const TIMELOCK_FACTORY_ADDRESS = "0x504F2E7D3A16e9e6A7E009976d243a1AFCD7dEbE";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 
 // Must match the factory's MAX_PAGE_SIZE constant.
@@ -2055,7 +2055,7 @@ const SUPER_WITHDRAW_MAX_VAULTS_PER_RUN = 7;
 
 // Only worth surfacing once someone has enough unlocked vaults that clicking
 // through them one at a time would actually be tedious.
-const SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS = 4;
+const SUPER_WITHDRAW_MIN_UNLOCKED_VAULTS = 2;
 
 /**
  * Picks which unlocked vaults (and which of their staked NFTs) a SuperWithdrawer
