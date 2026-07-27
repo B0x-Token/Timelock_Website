@@ -1674,11 +1674,19 @@ export function updateStakingDepositPositionInfo() {
     // Calculate estimated percent of staking rewards
     const positionLiq = parseFloat(position.currentLiquidity);
     const totalLiq = parseFloat(totalLiquidityInStakingContract.toString());
-    const percentOfStaking = positionLiq / (totalLiq + positionLiq);
-
     const estimatedRewardsEl = document.getElementById('estimatedRewards');
-    if (estimatedRewardsEl) {
-        estimatedRewardsEl.value = (percentOfStaking * 100).toFixed(4) + "%";
+
+    // totalLiquidityInStakingContract is 0 until getRewardStats() resolves. Computing the
+    // ratio against a stale 0 total (rather than waiting for the real total) makes any
+    // existing position look like 100% of the pool, which is never actually true.
+    let percentOfStaking;
+    if (totalLiq <= 0) {
+        if (estimatedRewardsEl) estimatedRewardsEl.value = "Loading...";
+    } else {
+        percentOfStaking = positionLiq / (totalLiq + positionLiq);
+        if (estimatedRewardsEl) {
+            estimatedRewardsEl.value = (percentOfStaking * 100).toFixed(4) + "%";
+        }
     }
 
     console.log("updateStakingDepositPositionInfo - percentOfStaking:", percentOfStaking);

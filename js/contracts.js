@@ -505,7 +505,7 @@ export function getSqrtRatioAtTick(tick) {
  */
 export function getExplorerUrl(contractData) {
     const chain = chainConfig[contractData.chain];
-    return `${chain.explorerUrl}${contractData.address}`;
+    return `${chain.explorerUrl}${contractData.address}${contractData.explorerSuffix || ''}`;
 }
 
 /**

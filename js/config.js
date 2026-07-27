@@ -216,7 +216,8 @@ export const contractsList = [
         name: "Proof of Work / Mining Address ",
         address: ProofOfWorkAddresss,
         isToken: false,
-        chain: "base"
+        chain: "base",
+        explorerSuffix: "#tokentxns"
     },
     {
         name: "B0x Token Uniswap Liquidity Pool Staking Contract ",

@@ -410,6 +410,34 @@ function decodeVaultError(err) {
     return err?.reason || err?.message || 'Transaction failed.';
 }
 
+function isNotAuthorizedError(err) {
+    const text = [err?.reason, err?.message, err?.error?.message, decodeVaultError(err)]
+        .filter(Boolean)
+        .join(' ');
+    return /not[_\s-]?authorized/i.test(text);
+}
+
+// The stake transaction can be rejected with NOT_AUTHORIZED if the RPC node
+// serving it hasn't yet caught up with the NFT approve that was just mined
+// (approve and stake can land on different nodes behind a load balancer).
+// Retry with backoff — 1s, 2s, 4s — giving that node time to catch up before
+// giving up for good.
+const STAKE_AUTH_RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+async function sendStakeWithAuthRetry(vaultContract, tokenId) {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await vaultContract.stakeUniswapV4NFT(tokenId);
+        } catch (err) {
+            if (attempt >= STAKE_AUTH_RETRY_DELAYS_MS.length || !isNotAuthorizedError(err)) throw err;
+            const delay = STAKE_AUTH_RETRY_DELAYS_MS[attempt];
+            console.warn(`[Timelock] stakeUniswapV4NFT NOT_AUTHORIZED (attempt ${attempt + 1}/${STAKE_AUTH_RETRY_DELAYS_MS.length}), retrying in ${delay}ms:`, err);
+            showButtonToast('info', 'Waiting for network...', `The approval hasn't propagated yet. Retrying in ${delay / 1000}s.`);
+            await sleep(delay);
+        }
+    }
+}
+
 // ============================================
 // HELPERS
 // ============================================
@@ -1791,7 +1819,7 @@ export async function stakeNFTToVault() {
         }
 
         showButtonToast('info', `Step ${totalSteps}/${totalSteps} — Stake NFT`, 'Staking NFT through the vault. Confirm in your wallet.');
-        const stakeTx = await vaultContract.stakeUniswapV4NFT(tokenId);
+        const stakeTx = await sendStakeWithAuthRetry(vaultContract, tokenId);
         await stakeTx.wait();
 
         showButtonToast('success', 'NFT Staked!', `NFT #${tokenId} is now staked in your vault.`);

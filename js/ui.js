@@ -717,6 +717,15 @@ export async function switchTab(tabName) {
         if (typeof window.updateStakingValuesFromStored === 'function') {
             window.updateStakingValuesFromStored();
         }
+        // Re-render the "% of staking rewards" figure now that totalLiquidityInStakingContract
+        // is guaranteed fresh. The earlier "preload position data" step above (which populates
+        // positionData and first renders this same field) can run before getRewardStats() has
+        // resolved on a user's very first visit to this tab, using a stale total of 0 and showing
+        // a false 100%. Recomputing here — after getRewardStats() above — corrects it immediately
+        // instead of waiting for the user to touch the position dropdown.
+        if (typeof window.updateStakingDepositPositionInfo === 'function') {
+            window.updateStakingDepositPositionInfo();
+        }
     } else if (tabName === 'stake-increase' || tabName === 'stake-decrease') {
         // Load staking position data when switching to stake increase/decrease tabs
         if (window.walletConnected) {
@@ -1544,8 +1553,15 @@ export function updatePositionInfoMAIN_STAKING() {
     }
 
     var positionLiq = parseFloat(position.currentLiquidity);
-    var percentOfStaking = positionLiq / (parseFloat(totalLiquidityInStakingContract.toString()) + positionLiq);
-    document.getElementById('estimatedRewards').value = percentOfStaking.toFixed(6) * 100 + "%";
+    var totalLiq = parseFloat(totalLiquidityInStakingContract.toString());
+    // totalLiquidityInStakingContract is 0 until getRewardStats() resolves; dividing against
+    // a stale 0 total makes any existing position falsely read as 100% of the pool.
+    if (totalLiq <= 0) {
+        document.getElementById('estimatedRewards').value = "Loading...";
+    } else {
+        var percentOfStaking = positionLiq / (totalLiq + positionLiq);
+        document.getElementById('estimatedRewards').value = (percentOfStaking * 100).toFixed(4) + "%";
+    }
     console.log("percent stats: percentOfStaking = ",percentOfStaking);
     console.log("percent stats: percentotalLiquidityInStakingContracttOfStaking = ",totalLiquidityInStakingContract);
     console.log("percent stats: positionLiq = ",positionLiq);

@@ -487,6 +487,34 @@ export async function collectRewards() {
 // NFT STAKING
 // ============================================
 
+// The stake transaction can be rejected with NOT_AUTHORIZED if the RPC node
+// serving it hasn't yet caught up with the NFT approve that was just mined
+// (approve and stake can land on different nodes behind a load balancer).
+// Retry with backoff — 1s, 2s, 4s — giving that node time to catch up before
+// giving up for good.
+const STAKE_AUTH_RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+function isNotAuthorizedError(err) {
+    const text = [err?.reason, err?.message, err?.error?.message]
+        .filter(Boolean)
+        .join(' ');
+    return /not[_\s-]?authorized/i.test(text);
+}
+
+async function stakeUniswapV3NFTWithAuthRetry(LPStakingContract, positionID) {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await LPStakingContract.stakeUniswapV3NFT(positionID);
+        } catch (err) {
+            if (attempt >= STAKE_AUTH_RETRY_DELAYS_MS.length || !isNotAuthorizedError(err)) throw err;
+            const delay = STAKE_AUTH_RETRY_DELAYS_MS[attempt];
+            console.warn(`[Staking] stakeUniswapV3NFT NOT_AUTHORIZED (attempt ${attempt + 1}/${STAKE_AUTH_RETRY_DELAYS_MS.length}), retrying in ${delay}ms:`, err);
+            showInfoNotificationCentered('Waiting for network...', `The approval hasn't propagated yet. Retrying in ${delay / 1000}s.`);
+            await sleep(delay);
+        }
+    }
+}
+
 /**
  * Deposits an NFT position into staking contract
  * @async
@@ -519,7 +547,7 @@ export async function depositNFTStake() {
             "name": "tokenId",
             "type": "uint256"
         }],
-        "name": "stakeUniswapV4NFT",
+        "name": "stakeUniswapV3NFT",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -573,11 +601,11 @@ export async function depositNFTStake() {
         showSuccessNotificationCentered('Approved NFT Transfer!', 'Now confirm the Stake transaction in your wallet');
 
         console.log("Approval confirmed!");
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await sleep(2000);
 
         // Step 2: Stake the NFT
         console.log(`Staking NFT token ${positionID}...`);
-        const stakeTx = await LPStakingContract.stakeUniswapV4NFT(positionID);
+        const stakeTx = await stakeUniswapV3NFTWithAuthRetry(LPStakingContract, positionID);
 
         showInfoNotificationCentered('Staking NFT...', 'Please wait for confirmation');
         console.log("Staking transaction sent:", stakeTx.hash);
