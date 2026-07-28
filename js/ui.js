@@ -946,6 +946,9 @@ export function switchMinerTab(tabName) {
     const tab = document.querySelector(`.miner-mode-tab[data-miner-tab="${tabName}"]`);
     if (content) content.classList.add('active');
     if (tab) tab.classList.add('active');
+
+    // Keep the URL linkable to the specific miner mode (e.g. ?miner-pool, ?miner-fpga)
+    updateURL(tabName === 'solo' ? 'miner' : `miner-${tabName}`);
 }
 
 export async function switchTab2(tabName) {

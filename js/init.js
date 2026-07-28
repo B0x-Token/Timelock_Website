@@ -14,7 +14,7 @@
 import { initializeChart, fetchPriceData, pricesLoaded } from './charts.js';
 import { checkWalletConnection, setupWalletListeners, connectWallet, disconnectWallet } from './wallet.js';
 import {
-    switchTab, switchTab2, switchTabForStats, showStatsPageDirect, updateLoadingStatus, showLoadingScreen, hideLoadingScreen,
+    switchTab, switchTab2, switchTabForStats, switchMinerTab, showStatsPageDirect, updateLoadingStatus, showLoadingScreen, hideLoadingScreen,
     initNotificationWidget, updateTokenIcon, updateTokenSelection, updatePositionDropdown,
     displayWalletBalances, updatePositionInfoMAIN_UNSTAKING, initTokenIconListeners, initRichListEventListeners
 } from './ui.js';
@@ -281,6 +281,9 @@ const validTabs = [
     'stats-rich-list',
     'rich-list',
     'miner',
+    'miner-solo',
+    'miner-pool',
+    'miner-fpga',
     'Timelock'
 ];
 
@@ -311,6 +314,14 @@ async function handleTabSwitch(tabName) {
     }
     if (tabName === 'staking') {
         tabName = 'staking-main-page';
+    }
+
+    // Handle miner sub-tabs (e.g. ?miner-pool, ?miner-fpga)
+    if (tabName === 'miner-solo' || tabName === 'miner-pool' || tabName === 'miner-fpga') {
+        const minerSubTab = tabName.replace('miner-', '');
+        switchTab('miner');
+        switchMinerTab(minerSubTab);
+        return;
     }
 
     // Check if this is a stats sub-tab
