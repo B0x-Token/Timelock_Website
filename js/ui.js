@@ -630,14 +630,20 @@ export async function switchTab(tabName) {
         
 
     console.log("Switched to tab:", tabName);
-    updateURL(tabName);
+    // Bridge owns its own URL (adds &dir=/&asset= on top of ?bridge) via
+    // syncBridgeURLParams(), called from initBridgeTab() below — running the
+    // generic updateURL() here would collapse it back down to a bare ?bridge
+    // first, flashing an incomplete URL before the correct one lands.
+    if (tabName !== 'bridge') {
+        updateURL(tabName);
+    }
 
 
 
     if (!window.walletConnected) {
         console.log("Wallet not connected");
     }else{
-        if(tabName != 'convert' && tabName != "settings" && tabName != "contract-info" && tabName != "whitepaper" && tabName != "miner"){
+        if(tabName != 'convert' && tabName != 'bridge' && tabName != "settings" && tabName != "contract-info" && tabName != "whitepaper" && tabName != "miner"){
 
             await switchToBase();
         }
@@ -814,6 +820,11 @@ export async function switchTab(tabName) {
         // Load timelock page data
         if (typeof window.Timelock !== 'undefined' && typeof window.Timelock.loadTimelockPage === 'function') {
             window.Timelock.loadTimelockPage();
+        }
+    } else if (tabName === 'bridge') {
+        // Load bridge page data (balances + tracked withdrawals)
+        if (typeof window.Bridge !== 'undefined' && typeof window.Bridge.initBridgeTab === 'function') {
+            window.Bridge.initBridgeTab();
         }
     } else {
         // Remove active class from all sub-tabs and sub-pages

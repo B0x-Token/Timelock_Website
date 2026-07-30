@@ -284,7 +284,8 @@ const validTabs = [
     'miner-solo',
     'miner-pool',
     'miner-fpga',
-    'Timelock'
+    'Timelock',
+    'bridge'
 ];
 
 // Stats sub-tabs that require switchTabForStats() first
@@ -340,7 +341,46 @@ async function handleTabSwitch(tabName) {
         }
     } else {
         console.log("Switching to tab:", tabName);
+
+        // Apply ?dir=/&asset= to the bridge state BEFORE switchTab() runs, so
+        // that when switchTab's initBridgeTab() writes the URL it already has
+        // the right direction/asset instead of the pre-deep-link defaults.
+        if (tabName === 'bridge') {
+            applyBridgeDeepLinkParams();
+        }
+
         switchTab(tabName);
+    }
+}
+
+/**
+ * Applies ?dir= and ?asset= query params to the Bridge tab (e.g.
+ * ?bridge&dir=toEthereum&asset=B0x) so a direction + asset combo can be
+ * bookmarked or shared as a link.
+ * @returns {void}
+ */
+function applyBridgeDeepLinkParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const dir = urlParams.get('dir');
+    const asset = urlParams.get('asset');
+
+    if ((dir === 'toBase' || dir === 'toEthereum') && typeof window.setBridgeDirection === 'function') {
+        console.log('Applying bridge direction from URL:', dir);
+        window.setBridgeDirection(dir);
+    }
+
+    if (asset) {
+        const tokenSelect = document.getElementById('bridgeToken');
+        const hasOption = tokenSelect && Array.from(tokenSelect.options).some(opt => opt.value === asset);
+        if (hasOption) {
+            console.log('Applying bridge asset from URL:', asset);
+            tokenSelect.value = asset;
+            if (typeof window.updateBridgeTokenIcon === 'function') {
+                window.updateBridgeTokenIcon();
+            }
+        } else {
+            console.warn(`Invalid bridge asset parameter: ${asset}`);
+        }
     }
 }
 

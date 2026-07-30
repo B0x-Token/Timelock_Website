@@ -7108,3 +7108,118 @@ body.ipfs-active {
     color: #888;
     font-style: italic;
 }
+
+/* ============================================================
+   Bridging L1<->L2 Tab
+   ============================================================ */
+
+.bridge-balance-heading {
+    color: #aaa;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 4px 0 4px;
+}
+
+.bridge-withdrawals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.bridge-withdrawal-card {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-left: 4px solid #7877c6;
+    border-radius: 16px;
+    padding: 18px 20px;
+}
+
+.bridge-withdrawal-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.bridge-withdrawal-title {
+    font-weight: 700;
+    color: #fff;
+}
+
+.bridge-withdrawal-hash {
+    color: #8a90a3;
+    font-size: 0.78rem;
+    font-family: ui-monospace, monospace;
+    word-break: break-all;
+}
+
+.bridge-withdrawal-status {
+    color: #cfd2dc;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin: 8px 0 12px;
+}
+
+.bridge-status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.bridge-status-badge.pending {
+    background: rgba(246, 173, 85, 0.15);
+    color: #f6ad55;
+}
+
+.bridge-status-badge.ready {
+    background: rgba(56, 193, 114, 0.15);
+    color: #38c172;
+}
+
+.bridge-status-badge.done {
+    background: rgba(120, 119, 198, 0.2);
+    color: #a5a4e0;
+}
+
+.bridge-status-badge.error {
+    background: rgba(245, 101, 101, 0.15);
+    color: #f56565;
+}
+
+.bridge-withdrawal-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.bridge-withdrawal-actions button {
+    padding: 8px 14px;
+    font-size: 0.8rem;
+}
+
+.btn-disabled-spinner {
+    cursor: not-allowed !important;
+}
+
+.bridge-scan-progress {
+    color: #8a90a3;
+    font-size: 0.8rem;
+    font-family: ui-monospace, monospace;
+    margin-top: 10px;
+    min-height: 1.2em;
+}
+
+.bridge-withdrawal-actions button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}

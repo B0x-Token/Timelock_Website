@@ -46,6 +46,7 @@ import * as Pools from './pools.js';  // NEW: Pool fees functionality
 import * as MiningCalc from './mining-calc.js';  // NEW: Mining calculator functionality
 import * as Countdown from './countdown.js';  // NEW: Countdown timer and reload functionality
 import * as Timelock from './timelock.js';  // NEW: TimeLock vault functionality
+import * as Bridge from './bridge.js';  // NEW: Bridging L1<->L2 functionality
 
 // ============================================
 // EXPOSE MODULES GLOBALLY
@@ -72,6 +73,7 @@ window.Admin = Admin;
 window.Init = Init;
 window.Whitepaper = Whitepaper;
 window.Timelock = Timelock;
+window.Bridge = Bridge;
 
 // ============================================
 // EXPOSE KEY CONFIGURATION VARIABLES
@@ -599,6 +601,20 @@ window.initializeDApp = Init.initializeDApp;
 window.setupEventListeners = Init.setupEventListeners;
 window.initializeTabFromURL = Init.initializeTabFromURL;
 
+// Bridge module (Bridging L1<->L2 tab)
+window.setBridgeDirection = Bridge.setBridgeDirection;
+window.flipBridgeDirection = Bridge.flipBridgeDirection;
+window.updateBridgeTokenIcon = Bridge.updateBridgeTokenIcon;
+window.setMaxBridgeAmount = Bridge.setMaxBridgeAmount;
+window.executeBridge = Bridge.executeBridge;
+window.trackBridgeWithdrawalByHash = Bridge.trackBridgeWithdrawalByHash;
+window.removeBridgeWithdrawal = Bridge.removeBridgeWithdrawal;
+window.checkBridgeWithdrawalStatus = Bridge.checkBridgeWithdrawalStatus;
+window.proveBridgeWithdrawal = Bridge.proveBridgeWithdrawal;
+window.finalizeBridgeWithdrawal = Bridge.finalizeBridgeWithdrawal;
+window.findMyBridgeWithdrawals = Bridge.findMyBridgeWithdrawals;
+window.refreshAllTrackedWithdrawalStatuses = Bridge.refreshAllTrackedWithdrawalStatuses;
+
 // Countdown module
 window.resetCountdown = Countdown.resetCountdown;
 window.startCountdown = Countdown.startCountdown;
@@ -614,7 +630,7 @@ window.isCountdownRunning = Countdown.isCountdownRunning;
 console.log('✅ All modules loaded successfully');
 console.log('📦 Modules available:', Object.keys({
     Config, Utils, UI, Wallet, Charts, ABIs, Settings,
-    Contracts, DataLoader, Staking, Positions, Swaps, Convert, Admin, Init, Whitepaper, Countdown
+    Contracts, DataLoader, Staking, Positions, Swaps, Convert, Admin, Init, Whitepaper, Countdown, Timelock, Bridge
 }));
 console.log('🚀 B0x DApp ready for initialization');
 

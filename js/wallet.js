@@ -1018,6 +1018,17 @@ export async function setupWalletListeners() {
                 }
             }
 
+            // Refresh the Bridge tab for the new account — reloads both chains'
+            // balances and re-renders the tracked-withdrawals list (which is stored
+            // per-address), so the old account's data doesn't linger on screen.
+            if (window.Bridge && typeof window.Bridge.initBridgeTab === 'function') {
+                try {
+                    window.Bridge.initBridgeTab();
+                } catch (e) {
+                    console.warn('Failed to refresh Bridge tab on account change:', e);
+                }
+            }
+
             // Show loading state for position selectors during account change
             if (window.setIsInitialPositionLoad) {
                 window.setIsInitialPositionLoad(true);

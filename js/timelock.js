@@ -1257,7 +1257,7 @@ function renderVaultCards(container) {
         html += `
         <div class="timelock-vault-card ${selectedVaultAddress === vault.address ? 'selected' : ''}">
             <div class="timelock-vault-header">
-                <a class="timelock-vault-addr" href="https://basescan.org/address/${vault.address}#readContract#F11" target="_blank" rel="noopener noreferrer" title="${vault.address}" style="color:inherit;text-decoration:underline dotted">${shortAddr}</a>
+                <a class="timelock-vault-addr" href="https://basescan.org/address/${vault.address}#readContract#F10" target="_blank" rel="noopener noreferrer" title="${vault.address}" style="color:inherit;text-decoration:underline dotted">${shortAddr}</a>
                 ${lockLabel}
             </div>
             <div class="timelock-vault-detail">Unlocks: ${formatUnlockTime(vault.unlockTime)}</div>
@@ -1304,7 +1304,7 @@ export async function selectVault(vaultAddress) {
     if (panel) panel.style.display = 'block';
 
     const addrEl = document.getElementById('timelock-selected-vault-addr');
-    if (addrEl) addrEl.innerHTML = `<a href="https://basescan.org/address/${vaultAddress}#readContract#F11" target="_blank" rel="noopener noreferrer" style="color:#aaa;text-decoration:underline dotted">${vaultAddress}</a>`;
+    if (addrEl) addrEl.innerHTML = `<a href="https://basescan.org/address/${vaultAddress}#readContract#10" target="_blank" rel="noopener noreferrer" style="color:#aaa;text-decoration:underline dotted">${vaultAddress}</a>`;
 
     await refreshVaultStatus(vaultAddress);
     await populateNFTSelectors(vaultAddress);

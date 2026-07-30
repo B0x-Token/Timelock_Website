@@ -189,6 +189,7 @@
                 <button class="nav-tab" onclick="switchTab('stake-decrease')" data-tab="stake-decrease">Stake
                     Decrease</button>
                 <button class="nav-tab" onclick="switchTab('convert')" data-tab="convert">Convert 0xBTC <-> B0x</button>
+                <button class="nav-tab" onclick="switchTab('bridge')" data-tab="bridge">Bridging L1&lt;-&gt;L2</button>
                 <button class="nav-tab" onclick="switchTab('stats')" data-tab="stats">Live Statistics</button>
                 <button class="nav-tab" onclick="switchTab('staking-management')" data-tab="staking-management">Stake
                     Management</button>
@@ -1087,6 +1088,123 @@
                 </div>
 
 
+                <!-- Bridging L1<->L2 Page -->
+                <div id="bridge" class="page">
+                    <div class="info-card">
+                        <h3>Bridging L1 &lt;-&gt; L2</h3>
+                        <p>Move ETH, 0xBTC, RightsTo0xBTC, and B0x between Ethereum (L1) and Base (L2) using Base's
+                            official, non-custodial canonical bridge contracts &mdash; the same ones that power
+                            bridge.base.org. Your funds are never held by a middleman.</p>
+                        <p><strong>Deposits</strong> (Ethereum &rarr; Base) usually arrive within a few minutes.
+                            <strong>Withdrawals</strong> (Base &rarr; Ethereum) require Base's challenge period to
+                            pass before you can Prove and then Finalize on Ethereum &mdash; track pending
+                            withdrawals in the panel below.</p>
+                    </div>
+
+                    <div class="nav-tabs2">
+                        <button class="nav-tab2 active" id="bridgeDirBtnToBase"
+                            onclick="setBridgeDirection('toBase')">Ethereum &rarr; Base (Deposit)</button>
+                        <button class="nav-tab2" id="bridgeDirBtnToEthereum"
+                            onclick="setBridgeDirection('toEthereum')">Base &rarr; Ethereum (Withdraw)</button>
+                    </div>
+
+                    <!-- Pending / Tracked Withdrawals -->
+                    <div class="wallet-balances" id="bridgeWithdrawalsPanel" style="display:none;">
+                        <h3>Base &rarr; Ethereum Withdrawals</h3>
+                        <p style="color: #aaa; font-size: 0.85rem;">Withdrawals initiated below are tracked
+                            automatically here. You can also track any Base withdrawal transaction hash manually
+                            &mdash; proving/finalizing is permissionless (anyone can submit it), but the funds
+                            always go to whichever address the withdrawal was originally made out to.</p>
+
+                        <div class="form-group">
+                            <label>Track a withdrawal by Base transaction hash</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" class="input-class" id="bridgeManualTxHash" placeholder="0x...">
+                                <button class="btn-secondary" type="button"
+                                    onclick="trackBridgeWithdrawalByHash()">Track</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Or find withdrawals you started elsewhere (e.g. bridge.base.org)</label>
+                            <p style="color: #6c757d; font-size: 0.8rem; margin-top: -4px;">
+                                Searches recent Base blocks first so hits show up quickly, then keeps going back a
+                                total of 60 days. Click again afterward to search another 60 days further back.
+                            </p>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                <button class="btn-secondary" type="button" id="bridgeFindWithdrawalsBtn"
+                                    onclick="findMyBridgeWithdrawals()">Find My Withdrawals</button>
+                                <button class="btn-secondary" type="button"
+                                    onclick="refreshAllTrackedWithdrawalStatuses()">Refresh All Statuses</button>
+                            </div>
+                            <div id="bridgeScanProgress" class="bridge-scan-progress"></div>
+                        </div>
+
+                        <div id="bridgeWithdrawalsList" class="bridge-withdrawals-list">
+                            <p style="color: #6c757d; font-style: italic;">No tracked withdrawals yet.</p>
+                        </div>
+                    </div>
+
+                    <!-- Wallet Balances Display -->
+                    <div class="wallet-balances">
+                        <h3>Wallet Balances</h3>
+                        <h4 class="bridge-balance-heading">On Ethereum</h4>
+                        <div id="bridgeBalancesETH" class="balances-grid">
+                            <p style="color: #6c757d; font-style: italic;">Connect wallet to load balances...</p>
+                        </div>
+                        <h4 class="bridge-balance-heading">On Base</h4>
+                        <div id="bridgeBalancesBase" class="balances-grid">
+                            <p style="color: #6c757d; font-style: italic;">Connect wallet to load balances...</p>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label id="bridgeFromLabel">From: Ethereum</label>
+                        <div class="token-selector">
+                            <div class="token-icon" id="bridgeTokenIcon">E</div>
+                            <select id="bridgeToken" onchange="updateBridgeTokenIcon()">
+                                <option value="0xBTC">0xBTC - 0xBitcoin Token</option>
+                                <option value="B0x">B0x</option>
+                                <option value="ETH">ETH</option>
+                                <option value="RightsTo0xBTC">RightsTo0xBTC</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Amount</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="number" class="input-class" id="bridgeAmount" placeholder="0.0"
+                                step="0.000001" value="0">
+                            <button class="btn-secondary" type="button" onclick="setMaxBridgeAmount()">MAX</button>
+                        </div>
+                        <p id="bridgeBalanceHint" style="color: #6c757d; font-size: 0.85rem; margin-top: 6px;">
+                        </p>
+                    </div>
+
+                    <div class="swap-direction">
+                        <button class="swap-arrow" type="button" onclick="flipBridgeDirection()"
+                            title="Reverse direction">⇅</button>
+                    </div>
+
+                    <div class="form-group">
+                        <label id="bridgeToLabel">To: Base</label>
+                        <div class="token-selector">
+                            <div class="token-icon" id="bridgeTokenIconTo">B</div>
+                            <input type="text" class="input-class" id="bridgeToTokenDisplay" readonly
+                                value="Same asset, received on the destination network"
+                                style="background: #f8f9fa; padding-left: 10px;">
+                        </div>
+                    </div>
+
+                    <div class="info-card2">
+                        <p>Estimated arrival: <strong id="bridgeEtaText">~1-3 minutes after your deposit confirms on
+                                Ethereum</strong></p>
+                    </div>
+
+                    <button class="btn-primary" id="executeBridgeBtn" onclick="executeBridge()">Bridge to
+                        Base</button>
+                </div>
 
 
 
