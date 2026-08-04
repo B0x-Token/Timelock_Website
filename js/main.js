@@ -613,6 +613,7 @@ window.checkBridgeWithdrawalStatus = Bridge.checkBridgeWithdrawalStatus;
 window.proveBridgeWithdrawal = Bridge.proveBridgeWithdrawal;
 window.finalizeBridgeWithdrawal = Bridge.finalizeBridgeWithdrawal;
 window.findMyBridgeWithdrawals = Bridge.findMyBridgeWithdrawals;
+window.stopBridgeWithdrawalScan = Bridge.stopBridgeWithdrawalScan;
 window.refreshAllTrackedWithdrawalStatuses = Bridge.refreshAllTrackedWithdrawalStatuses;
 
 // Jumps straight to the Bridge tab pre-set to a direction/asset (e.g. from the

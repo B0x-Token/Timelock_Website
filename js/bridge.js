@@ -1433,6 +1433,15 @@ function setFindButtonState({ label, disabled, visible } = {}) {
     if (visible !== undefined) btn.style.display = visible ? '' : 'none';
 }
 
+function setStopButtonVisible(visible) {
+    const btn = document.getElementById('bridgeStopScanBtn');
+    if (btn) btn.style.display = visible ? '' : 'none';
+}
+
+export function stopBridgeWithdrawalScan() {
+    if (scanState) scanState.stopRequested = true;
+}
+
 function setScanProgress(text) {
     const el = document.getElementById('bridgeScanProgress');
     if (el) el.textContent = text;
@@ -1454,19 +1463,26 @@ export async function findMyBridgeWithdrawals() {
 
     if (!scanState || scanState.address.toLowerCase() !== addr.toLowerCase()) {
         const latest = await baseProvider.getBlockNumber();
-        scanState = { address: addr, nextToBlock: latest, active: false };
+        scanState = { address: addr, nextToBlock: latest, active: false, stopRequested: false };
     }
     if (scanState.active) return;
     scanState.active = true;
+    scanState.stopRequested = false;
     setFindButtonState({ disabled: true });
+    setStopButtonVisible(true);
 
     const startBlock = scanState.nextToBlock;
     const hardStop = Math.max(startBlock - SCAN_WINDOW_DAYS * BLOCKS_PER_DAY, 0);
     let cursor = startBlock;
+    let stopped = false;
     const foundThisRound = [];
 
     try {
         while (cursor > hardStop) {
+            if (scanState.stopRequested) {
+                stopped = true;
+                break;
+            }
             const chunkTo = cursor;
             const chunkFrom = Math.max(chunkTo - SCAN_BLOCK_CHUNK + 1, hardStop);
 
@@ -1500,17 +1516,28 @@ export async function findMyBridgeWithdrawals() {
             await sleep(SCAN_REQUEST_DELAY_MS);
         }
 
-        scanState.nextToBlock = hardStop;
-        setScanProgress(
-            foundThisRound.length > 0
-                ? `Found ${foundThisRound.length} withdrawal(s) in this ~${SCAN_WINDOW_DAYS}-day search.`
-                : `No withdrawals found in this ~${SCAN_WINDOW_DAYS}-day search.`
-        );
+        if (stopped) {
+            scanState.nextToBlock = cursor;
+            setScanProgress(
+                foundThisRound.length > 0
+                    ? `Search stopped. Found ${foundThisRound.length} withdrawal(s) so far.`
+                    : 'Search stopped. No withdrawals found yet.'
+            );
+        } else {
+            scanState.nextToBlock = hardStop;
+            setScanProgress(
+                foundThisRound.length > 0
+                    ? `Found ${foundThisRound.length} withdrawal(s) in this ~${SCAN_WINDOW_DAYS}-day search.`
+                    : `No withdrawals found in this ~${SCAN_WINDOW_DAYS}-day search.`
+            );
+        }
     } catch (err) {
         console.error('Error scanning for withdrawals:', err);
         setScanProgress(`Search stopped early: ${err.message || err}. You can try again, or paste the transaction hash manually above.`);
     } finally {
         scanState.active = false;
+        scanState.stopRequested = false;
+        setStopButtonVisible(false);
         const canGoOlder = scanState.nextToBlock > 0;
         setFindButtonState({
             label: canGoOlder ? `Search Older (+${SCAN_WINDOW_DAYS} more days)` : 'No older Base history to search',
@@ -1536,6 +1563,7 @@ export function initBridgeTab() {
         lastBridgeTabAddress = addr.toLowerCase();
         scanState = null;
         setFindButtonState({ label: 'Find My Withdrawals', disabled: false, visible: true });
+        setStopButtonVisible(false);
         setScanProgress('');
     }
 
@@ -1563,5 +1591,6 @@ export default {
     batchCheckWithdrawalStatuses,
     refreshAllTrackedWithdrawalStatuses,
     findMyBridgeWithdrawals,
+    stopBridgeWithdrawalScan,
     initBridgeTab
 };
