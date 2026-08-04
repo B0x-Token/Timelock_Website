@@ -795,7 +795,7 @@
                         <div id="timelock-masquerade-banner" style="display:none;margin-bottom:12px;padding:10px 14px;background:#2a200a;border:1px solid #f0a500;border-radius:8px;font-size:0.9em;line-height:1.5"></div>
                         <h2 id="timelock-vaults-heading">Your Timelock Vaults</h2>
                         <div id="timelock-vaults-total" style="display:none;margin-bottom:12px;font-size:2em;color:#4caf50;font-weight:600"></div>
-                        <button class="btn-primary" onclick="Timelock.loadUserVaults()" style="margin-bottom:12px">Refresh Vaults</button>
+                        <button class="btn-primary" onclick="Timelock.refreshSelectedVault()" style="margin-bottom:12px">Refresh Vaults</button>
                         <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                             <label for="timelock-vault-sort-select" style="font-size:0.9em;color:#aaa">Sort by:</label>
                             <select id="timelock-vault-sort-select" onchange="Timelock.setVaultSortMode(this.value)" style="padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
@@ -1521,15 +1521,13 @@
     <h3>Token Swap</h3>
     <p>Exchange one token for another at current market rates with minimal slippage.</p>
 <h3 style="color: red">When using this tab you swap at the current Liquidity Pool Rate, if you wish to convert 0xBTC 1:1 with the ability to convert back use the convert tab <button onclick="switchTab('convert')">Switch to Convert</button></h3>    <h3>
-        <a style="color:yellow" href="https://jumper.exchange/?fromChain=8453&toChain=8453&toToken=0x0000000000000000000000000000000000000000">
-            <img src="https://bzerox.org/images/logo_jumper_dark_mono_horizontal.png" alt="Jumper Exchange" style="vertical-align:middle; height:20px; margin-right:8px;" loading="lazy">
-            If you need to bridge Ethereum to Base Click here to go to jumper.exchange
+        <a style="color:yellow; cursor:pointer;" onclick="goToBridge('toBase','ETH')">
+            If you need to bridge to Ethereum to Base Click Here to bridge
         </a>
     </h3>
     <h3>
-        <a style="color:yellow" href="https://superbridge.app/?fromChainId=1&toChainId=8453&tokenAddress=0xb6ed7644c69416d67b522e20bc294a9a9b405b31">
-            <img src="https://bzerox.org/images/superbridge2.png" alt="SuperBridge" style="vertical-align:middle; height:20px; margin-right:8px;" loading="lazy">
-            If you need to bridge 0xBitcoin from Ethereum to Base Click here to go to SuperBridge.gg/base
+        <a style="color:yellow; cursor:pointer;" onclick="goToBridge('toBase','0xBTC')">
+            If you need to  bridge 0xBitcoin from Ethereum to Base click here
         </a>
     </h3>
 </div>
@@ -1687,9 +1685,8 @@
                         <p>Provide liquidity to earn fees by depositing token pairs into liquidity pools.</p>
 
     <h3>
-        <a style="color:yellow" href="https://superbridge.app/?fromChainId=1&toChainId=8453&tokenAddress=0xb6ed7644c69416d67b522e20bc294a9a9b405b31">
-            <img src="https://bzerox.org/images/superbridge2.png" alt="SuperBridge" style="vertical-align:middle; height:20px; margin-right:8px;" loading="lazy">
-            If you need to bridge 0xBitcoin from Ethereum to Base Click here to go to SuperBridge.gg/base
+        <a style="color:yellow; cursor:pointer;" onclick="goToBridge('toBase','0xBTC')">
+            If you need to  bridge 0xBitcoin from Ethereum to Base click here
         </a>
     </h3>
 
@@ -1824,9 +1821,8 @@
                         <p>Add more funds to your existing liquidity position to earn more fees.</p>
 
     <h3>
-        <a style="color:yellow" href="https://superbridge.app/?fromChainId=1&toChainId=8453&tokenAddress=0xb6ed7644c69416d67b522e20bc294a9a9b405b31">
-            <img src="https://bzerox.org/images/superbridge2.png" alt="SuperBridge" style="vertical-align:middle; height:20px; margin-right:8px;" loading="lazy">
-            If you need to bridge 0xBitcoin from Ethereum to Base Click here to go to SuperBridge.gg/base
+        <a style="color:yellow; cursor:pointer;" onclick="goToBridge('toBase','0xBTC')">
+            If you need to  bridge 0xBitcoin from Ethereum to Base click here
         </a>
     </h3>
                     </div>
@@ -2015,9 +2011,8 @@
                         <p>Add more funds to your existing staking position to earn more rewards.</p>
                         
     <h3>
-        <a style="color:yellow" href="https://superbridge.app/?fromChainId=1&toChainId=8453&tokenAddress=0xb6ed7644c69416d67b522e20bc294a9a9b405b31">
-            <img src="https://bzerox.org/images/superbridge2.png" alt="SuperBridge" style="vertical-align:middle; height:20px; margin-right:8px;" loading="lazy">
-            If you need to bridge 0xBitcoin from Ethereum to Base Click here to go to SuperBridge.gg/base
+        <a style="color:yellow; cursor:pointer;" onclick="goToBridge('toBase','0xBTC')">
+            If you need to  bridge 0xBitcoin from Ethereum to Base click here
         </a>
     </h3>
                     </div>

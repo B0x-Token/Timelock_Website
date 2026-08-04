@@ -615,6 +615,17 @@ window.finalizeBridgeWithdrawal = Bridge.finalizeBridgeWithdrawal;
 window.findMyBridgeWithdrawals = Bridge.findMyBridgeWithdrawals;
 window.refreshAllTrackedWithdrawalStatuses = Bridge.refreshAllTrackedWithdrawalStatuses;
 
+// Jumps straight to the Bridge tab pre-set to a direction/asset (e.g. from the
+// "bridge to Base" links on other tabs) without a page navigation/reload.
+window.goToBridge = function (dir, asset) {
+    Bridge.setBridgeDirection(dir);
+    const tokenSelect = document.getElementById('bridgeToken');
+    if (tokenSelect && Array.from(tokenSelect.options).some(opt => opt.value === asset)) {
+        tokenSelect.value = asset;
+    }
+    UI.switchTab('bridge');
+};
+
 // Countdown module
 window.resetCountdown = Countdown.resetCountdown;
 window.startCountdown = Countdown.startCountdown;
