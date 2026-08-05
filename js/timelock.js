@@ -812,7 +812,16 @@ export function renderAllowedNFTs() {
         return;
     }
 
-    const entries = Object.values(positionData || {});
+    // Vault can't accept empty positions (transfer reverts), so exclude any
+    // position holding 0 B0x and 0 0xBTC from the eligible list.
+    const entries = Object.values(positionData || {}).filter(pos => {
+        const amountFor = (symbol) => {
+            if (pos.tokenA === symbol) return parseFloat(pos.currentTokenA) || 0;
+            if (pos.tokenB === symbol) return parseFloat(pos.currentTokenB) || 0;
+            return 0;
+        };
+        return amountFor('B0x') > 0 || amountFor('0xBTC') > 0;
+    });
     if (entries.length === 0) {
         container.innerHTML = '<p style="color:#aaa">No eligible Uniswap V4 B0x/0xBTC positions found in your wallet.</p>';
         return;
@@ -1584,7 +1593,16 @@ async function populateNFTSelectors(vaultAddress) {
     // Populate "stake NFT" dropdown with user's unstaked positions
     const stakeSelect = document.getElementById('timelock-nft-select');
     if (stakeSelect) {
-        const entries = Object.values(positionData || {});
+        // Vault can't accept empty positions (transfer reverts), so exclude any
+        // position holding 0 B0x and 0 0xBTC from the stake dropdown.
+        const entries = Object.values(positionData || {}).filter(pos => {
+            const amountFor = (symbol) => {
+                if (pos.tokenA === symbol) return parseFloat(pos.currentTokenA) || 0;
+                if (pos.tokenB === symbol) return parseFloat(pos.currentTokenB) || 0;
+                return 0;
+            };
+            return amountFor('B0x') > 0 || amountFor('0xBTC') > 0;
+        });
         if (entries.length === 0) {
             stakeSelect.innerHTML = '<option value="">No eligible positions found</option>';
         } else {
