@@ -924,6 +924,9 @@
                         <!-- ERC-20 Deposit -->
                         <div class="info-card3">
                             <h2>Deposit ERC-20 Token</h2>
+                            <div id="timelock-deposit-token-masquerade-warning" style="display:none;margin-bottom:12px;padding:10px 14px;background:#3a0a0a;border:1px solid #e55;border-radius:8px;font-size:0.9em;line-height:1.5;color:#f88">
+                                ⚠️ <strong>Masquerade Mode Active</strong> — You are viewing someone else's vault. Depositing will transfer <strong>your tokens</strong> into their vault. You will not be able to recover them unless you also control that wallet.
+                            </div>
                             <p>Transfer ERC-20 tokens directly into this vault. They will be timelocked and only the vault owner can withdraw them after the timelock expires.</p>
                             <div style="margin-bottom:18px;padding:14px;background:#161626;border:1px solid #f0a500;border-radius:8px">
                                 <div style="font-size:1.1em;color:#f0a500;margin-bottom:10px;font-weight:700;letter-spacing:0.04em">Your Wallet Balances</div>
@@ -977,6 +980,7 @@
                             <div id="timelock-b0xguess-status" style="margin-bottom:12px;font-size:0.95em;color:#aaa">Select a vault to load B0x Guess status.</div>
                             <div class="form-group">
                                 <label>Amount of B0x to Stake</label>
+                                <div id="timelock-b0xguess-wallet-balance-inline" style="font-size:0.85em;color:#aaa;margin-bottom:6px">Your wallet's B0x balance: —</div>
                                 <div style="display:flex;gap:8px;align-items:center">
                                     <input type="number" id="timelock-b0xguess-stake-amount" placeholder="0.0" min="0" step="any" style="flex:1;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
                                     <button class="btn-secondary" onclick="Timelock.setMaxStakeB0xGuessAmount()" style="white-space:nowrap;padding:8px 16px">Max</button>
@@ -985,8 +989,8 @@
                             <button class="btn-success" id="timelockStakeB0xGuessBtn" onclick="Timelock.stakeB0xGuessToVault()">Stake B0x</button>
 
                             <div id="timelock-b0xguess-vault-stake-section" style="margin-top:16px;padding-top:16px;border-top:1px solid #333">
-                                <h3 style="margin:0 0 8px 0;font-size:1em">From Vault Balance <span style="color:#aaa;font-weight:400">(Owner Only)</span></h3>
-                                <p style="color:#aaa">Stakes B0x the vault already holds — e.g. from deposits or claimed LP rewards — straight into its B0x Guess position. No wallet approval needed. Only the vault's owner (or the factory) can call this; it reverts otherwise.</p>
+                                <h3 style="margin:0 0 8px 0;font-size:1em">From Vault Balance <span style="color:#aaa;font-weight:400">(Owner or Delegated Caller Only)</span></h3>
+                                <p style="color:#aaa">Stakes B0x the vault already holds — e.g. from deposits or claimed LP rewards — straight into its B0x Guess position. No wallet approval needed. Only the vault's owner, its delegated GuessDepoCaller, or the factory can call this; it reverts otherwise.</p>
                                 <div class="form-group">
                                     <label>Amount of Vault's B0x to Stake</label>
                                     <div id="timelock-b0xguess-vault-balance-inline" style="font-size:0.85em;color:#aaa;margin-bottom:6px">Vault's current B0x balance: —</div>
@@ -998,6 +1002,7 @@
                                 <div style="display:flex;gap:12px;flex-wrap:wrap">
                                     <button class="btn-success" id="timelockStakeVaultB0xGuessBtn" onclick="Timelock.stakeVaultB0xGuessFromVault()">Stake Amount From Vault</button>
                                     <button class="btn-success" id="timelockStakeAllVaultB0xGuessBtn" onclick="Timelock.stakeAllVaultB0xGuess()">Stake Entire Vault Balance</button>
+                                    <button class="btn-success" id="timelockGetRewardsAndStakeAllBtn" onclick="Timelock.getRewardsAndStakeAllVaultB0xGuess()">GET Vaults' LP B0x Staking Rewards and Stake Entire Vault Balance into Guess</button>
                                 </div>
                             </div>
                         </div>
@@ -1054,6 +1059,18 @@
                                 <input type="text" id="timelock-new-owner-input" placeholder="0x..." style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
                             </div>
                             <button class="btn-secondary" id="timelockTransferOwnerBtn" onclick="Timelock.transferVaultOwnership()">Transfer Ownership (Locked Only)</button>
+                        </div>
+
+                        <!-- Transfer Guess Depo Caller -->
+                        <div id="timelock-transfer-guessdepo-section" class="info-card3" style="display:none">
+                            <h2>Transfer Guess Depo Caller</h2>
+                            <p style="color:#aaa">Delegates the ability to call this vault's B0x Guess staking methods (<code>stakeVaultB0xGuess</code> / <code>stakeVaultMaxAndRewards</code>) to another address, without granting any ability to withdraw. Only callable by the vault's owner or the current GuessDepoCaller.</p>
+                            <div id="timelock-guessdepo-current-inline" style="font-size:0.85em;color:#aaa;margin-bottom:6px">Current GuessDepoCaller: —</div>
+                            <div class="form-group">
+                                <label>New GuessDepoCaller Address</label>
+                                <input type="text" id="timelock-new-guessdepo-input" placeholder="0x..." style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
+                            </div>
+                            <button class="btn-secondary" id="timelockTransferGuessDepoBtn" onclick="Timelock.transferGuessDepoCaller()">Transfer Guess Depo Caller</button>
                         </div>
 
                     </div><!-- end vault-actions -->

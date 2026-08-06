@@ -17,7 +17,8 @@ import {
     contractAddress_Swapper,
     hookAddress,
     MULTICALL_ADDRESS,
-    WETHbase
+    WETHbase,
+    contractAddressLPRewardsStaking
 } from './config.js';
 
 import { getSymbolFromAddress, tokenAddressesDecimals } from './utils.js';
@@ -43,7 +44,7 @@ import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0x70030D856891FBEf4328eEBac06cd9663a9f7ab8";
+export const TIMELOCK_FACTORY_ADDRESS = "0xff054C399444d64bD772Ca4Efe71C6449E08C955";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 
 // Must match the factory's MAX_PAGE_SIZE constant.
@@ -161,6 +162,13 @@ const TIMELOCK_VAULT_ABI = [
     {
         "inputs": [],
         "name": "owner",
+        "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "GuessDepoCaller",
         "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
         "stateMutability": "view",
         "type": "function"
@@ -306,6 +314,13 @@ const TIMELOCK_VAULT_ABI = [
         "stateMutability": "nonpayable",
         "type": "function"
     },
+    {
+        "inputs": [{ "internalType": "address", "name": "newGuessDepoCaller", "type": "address" }],
+        "name": "change_GuessDepoCaller",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
     // B0x Guess staking
     {
         "inputs": [{ "internalType": "uint256", "name": "amountOfB0x", "type": "uint256" }],
@@ -316,7 +331,7 @@ const TIMELOCK_VAULT_ABI = [
     },
     {
         "inputs": [],
-        "name": "stakeVaultMax",
+        "name": "stakeVaultMaxAndRewards",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -830,13 +845,18 @@ function _updateMasqueradeBanner() {
     const stakeWarning = document.getElementById('timelock-stake-masquerade-warning');
     const stakeCost = document.getElementById('timelock-stake-masquerade-cost');
     const b0xGuessStakeWarning = document.getElementById('timelock-b0xguess-stake-masquerade-warning');
+    const depositTokenWarning = document.getElementById('timelock-deposit-token-masquerade-warning');
     const b0xGuessVaultStakeSection = document.getElementById('timelock-b0xguess-vault-stake-section');
     const superWithdrawMaxPenaltyGroup = document.getElementById('timelock-super-withdraw-max-penalty-group');
 
-    // stakeVaultB0xGuess/stakeVaultMax are onlyOwnerorFactory on-chain, with no
-    // permissionless fallback — unlike the plain wallet-stake path above,
-    // there's nothing this section could still do for a masquerading caller
-    // who isn't also the owner, so hide it instead of just warning.
+    // stakeVaultB0xGuess is onlyOwnerorGuessDepoCallerorFactory on-chain, with
+    // no permissionless fallback — unlike the plain wallet-stake path above,
+    // there's nothing this section could do for a masquerading caller who
+    // isn't also the owner, so default it hidden rather than just warning.
+    // This is only a coarse default for before any vault is selected (or
+    // right after one is): once loadB0xGuessStatus reads that specific
+    // vault's GuessDepoCaller, updateB0xGuessVaultStakeSectionVisibility
+    // re-applies visibility with the full owner-or-GuessDepoCaller check.
     const masqueradingAsSomeoneElse = !!masqueradeAddress &&
         (!window.userAddress || masqueradeAddress.toLowerCase() !== window.userAddress.toLowerCase());
     if (b0xGuessVaultStakeSection) b0xGuessVaultStakeSection.style.display = masqueradingAsSomeoneElse ? 'none' : '';
@@ -861,6 +881,7 @@ function _updateMasqueradeBanner() {
         if (stakeWarning) stakeWarning.style.display = 'block';
         if (stakeCost) stakeCost.style.display = 'inline';
         if (b0xGuessStakeWarning) b0xGuessStakeWarning.style.display = 'block';
+        if (depositTokenWarning) depositTokenWarning.style.display = 'block';
         document.querySelectorAll('.timelock-owner-wallet-phrase').forEach(el => {
             el.textContent = `the contract owner's wallet(${short})`;
         });
@@ -870,6 +891,7 @@ function _updateMasqueradeBanner() {
         if (stakeWarning) stakeWarning.style.display = 'none';
         if (stakeCost) stakeCost.style.display = 'none';
         if (b0xGuessStakeWarning) b0xGuessStakeWarning.style.display = 'none';
+        if (depositTokenWarning) depositTokenWarning.style.display = 'none';
         document.querySelectorAll('.timelock-owner-wallet-phrase').forEach(el => {
             el.textContent = 'your wallet';
         });
@@ -1508,9 +1530,10 @@ async function loadB0xGuessStatus(vaultAddress) {
         const calls = [
             { target: vaultAddress, allowFailure: true, callData: vaultInterface.encodeFunctionData('BalOfB0xGuess', [vaultAddress]) },
             { target: vaultAddress, allowFailure: true, callData: vaultInterface.encodeFunctionData('B0xGuessPenalty') },
-            { target: tokenAddresses['B0x'], allowFailure: true, callData: erc20Iface.encodeFunctionData('balanceOf', [vaultAddress]) }
+            { target: tokenAddresses['B0x'], allowFailure: true, callData: erc20Iface.encodeFunctionData('balanceOf', [vaultAddress]) },
+            { target: vaultAddress, allowFailure: true, callData: vaultInterface.encodeFunctionData('GuessDepoCaller') }
         ];
-        const [balRes, penaltyRes, vaultB0xRes] = await withRpcRetry(
+        const [balRes, penaltyRes, vaultB0xRes, guessDepoCallerRes] = await withRpcRetry(
             () => multicallContract.aggregate3(calls),
             'multicall B0x Guess status'
         );
@@ -1525,6 +1548,16 @@ async function loadB0xGuessStatus(vaultAddress) {
         lastB0xGuessBalance = balRaw;
         lastB0xGuessPenalty = penaltyRaw;
         lastVaultB0xBalance = vaultB0xRaw;
+
+        // GuessDepoCaller is a newer field — tolerate older/incompatible
+        // vaults where the call fails rather than failing this whole status load.
+        lastGuessDepoCaller = ethers.constants.AddressZero;
+        if (guessDepoCallerRes && guessDepoCallerRes.success) {
+            try {
+                [lastGuessDepoCaller] = vaultInterface.decodeFunctionResult('GuessDepoCaller', guessDepoCallerRes.returnData);
+            } catch {}
+        }
+        updateB0xGuessVaultStakeSectionVisibility();
 
         const fmt = (n) => {
             if (n === 0) return '0';
@@ -1563,6 +1596,42 @@ let lastB0xGuessPenalty = ethers.BigNumber.from(0);
 // Vault's own loose (unstaked) B0x balance, from the last loadB0xGuessStatus
 // call — used by the "From Vault Balance" stake buttons below.
 let lastVaultB0xBalance = ethers.BigNumber.from(0);
+
+// This vault's currently delegated GuessDepoCaller, from the last
+// loadB0xGuessStatus call — stakeVaultB0xGuess/stakeVaultMaxAndRewards are
+// onlyOwnerorGuessDepoCallerorFactory on-chain, so the connected wallet can
+// use the "From Vault Balance" section either as the owner or as this address.
+let lastGuessDepoCaller = ethers.constants.AddressZero;
+
+/**
+ * Shows/hides the sections gated on being this vault's owner or its
+ * GuessDepoCaller — "From Vault Balance" (stakeVaultB0xGuess/
+ * stakeVaultMaxAndRewards are onlyOwnerorGuessDepoCallerorFactory on-chain)
+ * and "Transfer Guess Depo Caller" (change_GuessDepoCaller has no on-chain
+ * restriction, but the site only exposes it to the two addresses that make
+ * sense to hand off delegation from). Also refreshes the current
+ * GuessDepoCaller shown inline above the transfer input.
+ */
+function updateB0xGuessVaultStakeSectionVisibility() {
+    const stakeSection = document.getElementById('timelock-b0xguess-vault-stake-section');
+    const transferSection = document.getElementById('timelock-transfer-guessdepo-section');
+    const currentInlineEl = document.getElementById('timelock-guessdepo-current-inline');
+
+    const vaultOwner = masqueradeAddress || window.userAddress;
+    const isOwner = !!vaultOwner && !!window.userAddress &&
+        vaultOwner.toLowerCase() === window.userAddress.toLowerCase();
+    const isGuessDepoCaller = !!window.userAddress &&
+        lastGuessDepoCaller !== ethers.constants.AddressZero &&
+        lastGuessDepoCaller.toLowerCase() === window.userAddress.toLowerCase();
+
+    if (stakeSection) stakeSection.style.display = (isOwner || isGuessDepoCaller) ? '' : 'none';
+    if (transferSection) transferSection.style.display = (isOwner || isGuessDepoCaller) ? '' : 'none';
+    if (currentInlineEl) {
+        currentInlineEl.textContent = lastGuessDepoCaller === ethers.constants.AddressZero
+            ? 'Current GuessDepoCaller: none set'
+            : `Current GuessDepoCaller: ${lastGuessDepoCaller}`;
+    }
+}
 
 /**
  * Reads the connected wallet's B0x balance and fills the stake amount input.
@@ -1711,8 +1780,10 @@ export async function stakeVaultB0xGuessFromVault() {
 
 /**
  * Stakes the vault's ENTIRE current loose B0x balance into B0x Guess in one
- * click (stakeVaultMax), rather than requiring an amount to be entered.
- * Same owner-or-factory restriction as stakeVaultB0xGuessFromVault.
+ * click, rather than requiring an amount to be entered — reads the vault's
+ * B0x balance client-side (stakeVaultMax was removed from the contract) and
+ * passes it straight to stakeVaultB0xGuess. Same owner-or-factory restriction
+ * as stakeVaultB0xGuessFromVault.
  */
 export async function stakeAllVaultB0xGuess() {
     setButtonToastAnchor('timelockStakeAllVaultB0xGuessBtn');
@@ -1736,7 +1807,7 @@ export async function stakeAllVaultB0xGuess() {
 
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
         showButtonToast('info', 'Staking From Vault', `Staking the vault's entire B0x balance (${ethers.utils.formatUnits(vaultBal, 18)}) into B0x Guess. Confirm in wallet.`);
-        const tx = await vaultContract.stakeVaultMax();
+        const tx = await vaultContract.stakeVaultB0xGuess(vaultBal);
         await tx.wait();
 
         showButtonToast('success', 'B0x Staked!', `This vault's B0x balance is now staked in its B0x Guess position.`);
@@ -1746,6 +1817,78 @@ export async function stakeAllVaultB0xGuess() {
         showButtonToast('error', 'Stake Failed', decodeVaultError(err));
     } finally {
         enableBtn('timelockStakeAllVaultB0xGuessBtn');
+    }
+    } finally { clearButtonToastAnchor(); }
+}
+
+/**
+ * Claims the vault's outstanding B0x LP staking reward (via
+ * stakeVaultMaxAndRewards's getRewardForTokensContract call — no try/catch,
+ * so this reverts the whole transaction if that claim reverts) and stakes
+ * the vault's resulting entire B0x balance into B0x Guess, in one transaction.
+ * Same owner-or-factory restriction as stakeAllVaultB0xGuess.
+ *
+ * Before sending the tx, previews the split by reading the vault's current
+ * loose B0x balance plus LP_POOL.getRewardForTokensOwed(vault, [B0x]) — the
+ * pending reward the LP staking pool owes the vault — and confirms the
+ * combined total with the user.
+ */
+export async function getRewardsAndStakeAllVaultB0xGuess() {
+    setButtonToastAnchor('timelockGetRewardsAndStakeAllBtn');
+    try {
+    if (!window.walletConnected) await window.connectWallet();
+    if (!selectedVaultAddress) {
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
+        return;
+    }
+
+    disableBtn('timelockGetRewardsAndStakeAllBtn');
+
+    try {
+        const readProvider = await getTimelockProvider();
+        const tokenContract = new ethers.Contract(tokenAddresses['B0x'], ERC20_MINIMAL_ABI, readProvider);
+        const lpPoolContract = new ethers.Contract(contractAddressLPRewardsStaking, LP_POOL_MINIMAL_ABI, readProvider);
+
+        const [vaultBalRaw, rewardsOwedRaw] = await Promise.all([
+            withRpcRetry(() => tokenContract.balanceOf(selectedVaultAddress), 'balanceOf'),
+            withRpcRetry(() => lpPoolContract.getRewardForTokensOwed(selectedVaultAddress, [tokenAddresses['B0x']]), 'getRewardForTokensOwed')
+                .catch(() => [ethers.BigNumber.from(0)])
+        ]);
+        const rewardOwedRaw = rewardsOwedRaw[0] || ethers.BigNumber.from(0);
+        const totalRaw = vaultBalRaw.add(rewardOwedRaw);
+
+        const fmt = (n) => {
+            if (n === 0) return '0';
+            if (n < 0.000001) return n.toExponential(4);
+            if (n < 0.001)    return n.toPrecision(4);
+            return n.toPrecision(6).replace(/\.?0+$/, '');
+        };
+        const vaultBalDisplay = fmt(parseFloat(ethers.utils.formatUnits(vaultBalRaw, 18)));
+        const rewardOwedDisplay = fmt(parseFloat(ethers.utils.formatUnits(rewardOwedRaw, 18)));
+        const totalDisplay = fmt(parseFloat(ethers.utils.formatUnits(totalRaw, 18)));
+
+        const vaultOwner = masqueradeAddress || window.userAddress || 'Unknown';
+
+        const confirmed = window.confirm(
+            `You will make the Vault deposit ${vaultBalDisplay} B0x Tokens from its balance and ${rewardOwedDisplay} B0x Tokens from its LP Staking rewards, ` +
+            `for a total of ${totalDisplay} B0x Tokens going into B0x Guess on behalf of the Vault, which is owned by ${vaultOwner}.\n\n` +
+            `Vault: ${selectedVaultAddress}\n\n` +
+            `Are you sure you want to proceed?`
+        );
+        if (!confirmed) return;
+
+        const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
+        showButtonToast('info', 'Claiming Rewards & Staking', `Claiming this vault's LP staking rewards and staking its entire B0x balance into B0x Guess. Confirm in wallet.`);
+        const tx = await vaultContract.stakeVaultMaxAndRewards();
+        await tx.wait();
+
+        showButtonToast('success', 'B0x Staked!', `Rewards claimed and this vault's B0x balance is now staked in its B0x Guess position.`);
+        await loadB0xGuessStatus(selectedVaultAddress);
+    } catch (err) {
+        console.error('getRewardsAndStakeAllVaultB0xGuess error:', err);
+        showButtonToast('error', 'Stake Failed', decodeVaultError(err));
+    } finally {
+        enableBtn('timelockGetRewardsAndStakeAllBtn');
     }
     } finally { clearButtonToastAnchor(); }
 }
@@ -3404,6 +3547,59 @@ export async function transferVaultOwnership() {
 }
 
 /**
+ * Delegates this vault's B0x Guess staking power (stakeVaultB0xGuess /
+ * stakeVaultMaxAndRewards) to a new GuessDepoCaller via change_GuessDepoCaller.
+ * That contract call has no on-chain access restriction, but the section is
+ * only shown to (and this handler only intended for) the vault's owner or its
+ * current GuessDepoCaller — see updateB0xGuessVaultStakeSectionVisibility.
+ * Grants no withdrawal ability to the new address.
+ */
+export async function transferGuessDepoCaller() {
+    setButtonToastAnchor('timelockTransferGuessDepoBtn');
+    try {
+    if (!window.walletConnected) await window.connectWallet();
+    if (!selectedVaultAddress) {
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
+        return;
+    }
+
+    const input = document.getElementById('timelock-new-guessdepo-input');
+    const newGuessDepoCaller = input?.value?.trim();
+
+    if (!newGuessDepoCaller || !ethers.utils.isAddress(newGuessDepoCaller)) {
+        showButtonToast('error', 'Invalid Address', 'Please enter a valid Ethereum address.');
+        return;
+    }
+
+    const confirmed = window.confirm(
+        `You are about to delegate this vault's B0x Guess staking power to:\n\n` +
+        `${newGuessDepoCaller}\n\n` +
+        `That address will be able to call stakeVaultB0xGuess / stakeVaultMaxAndRewards on this vault's behalf, ` +
+        `but will NOT be able to withdraw anything. This replaces the current GuessDepoCaller.\n\n` +
+        `Are you sure you want to proceed?`
+    );
+    if (!confirmed) return;
+
+    disableBtn('timelockTransferGuessDepoBtn');
+
+    try {
+        const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
+        showButtonToast('info', 'Transferring GuessDepoCaller', `Delegating to ${newGuessDepoCaller}. Confirm in wallet.`);
+        const tx = await vaultContract.change_GuessDepoCaller(newGuessDepoCaller);
+        await tx.wait();
+        showButtonToast('success', 'GuessDepoCaller Updated!', `This vault's GuessDepoCaller is now ${newGuessDepoCaller}.`);
+        if (input) input.value = '';
+        await loadB0xGuessStatus(selectedVaultAddress);
+    } catch (err) {
+        console.error('transferGuessDepoCaller error:', err);
+        showButtonToast('error', 'Failed', decodeVaultError(err));
+    } finally {
+        enableBtn('timelockTransferGuessDepoBtn');
+    }
+    } finally { clearButtonToastAnchor(); }
+}
+
+/**
  * Approves an ERC-20 spend allowance if the current allowance is insufficient.
  * By default grants an unlimited allowance so repeat vault/factory interactions
  * (staking, anti-spam fees, etc.) don't need a fresh approval every time.
@@ -3432,6 +3628,12 @@ const ERC20_MINIMAL_ABI = [
     { "inputs": [{ "internalType": "address", "name": "account", "type": "address" }], "name": "balanceOf", "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }], "stateMutability": "view", "type": "function" },
     { "inputs": [], "name": "decimals", "outputs": [{ "internalType": "uint8", "name": "", "type": "uint8" }], "stateMutability": "view", "type": "function" },
     { "inputs": [], "name": "symbol", "outputs": [{ "internalType": "string", "name": "", "type": "string" }], "stateMutability": "view", "type": "function" }
+];
+
+// Minimal read-only fragment of the external LP staking pool (contractAddressLPRewardsStaking),
+// used to preview outstanding rewards before calling stakeVaultMaxAndRewards.
+const LP_POOL_MINIMAL_ABI = [
+    { "inputs": [{ "internalType": "address", "name": "user", "type": "address" }, { "internalType": "address[]", "name": "rewardTokens", "type": "address[]" }], "name": "getRewardForTokensOwed", "outputs": [{ "internalType": "uint256[]", "name": "rewardsOwed", "type": "uint256[]" }], "stateMutability": "view", "type": "function" }
 ];
 
 // Tokens shown in the deposit dropdown
@@ -3705,12 +3907,18 @@ const DECIMALS_MAP = { B0x: 18, '0xBTC': 8, WETH: 18, USDC: 6, RightsTo0xBTC: 18
  * inside the deposit card so the user knows how much they can send.
  */
 export async function loadWalletDepositBalances() {
+    // The B0x Guess stake card shows the same wallet B0x balance inline next to
+    // its amount input — piggyback on this function's fetch instead of a second
+    // multicall, since B0x is already one of the DEPOSIT_TOKENS below.
+    const b0xGuessWalletBalEl = document.getElementById('timelock-b0xguess-wallet-balance-inline');
+
     const container = document.getElementById('timelock-wallet-deposit-balances');
     if (!container) return;
 
     const walletAddr = window.userAddress;
     if (!walletAddr) {
         container.innerHTML = '<span style="color:#aaa">Connect wallet to see balances.</span>';
+        if (b0xGuessWalletBalEl) b0xGuessWalletBalEl.textContent = "Your wallet's B0x balance: connect your wallet to see it";
         return;
     }
 
@@ -3764,11 +3972,17 @@ export async function loadWalletDepositBalances() {
                 <span class="timelock-token-sym">${tok.symbol}</span>
                 <span class="timelock-token-amt">${fmt(display)}</span>
             </div>`;
+            if (tok.key === 'B0x' && b0xGuessWalletBalEl) {
+                b0xGuessWalletBalEl.textContent = `Your wallet's B0x balance: ${fmt(display)} B0x`;
+            }
         } catch {
             rows += `<div class="timelock-token-bal-row">
                 <span class="timelock-token-sym">${tok.symbol}</span>
                 <span class="timelock-token-amt" style="color:#888">—</span>
             </div>`;
+            if (tok.key === 'B0x' && b0xGuessWalletBalEl) {
+                b0xGuessWalletBalEl.textContent = "Your wallet's B0x balance: —";
+            }
         }
     }
     container.innerHTML = rows || '<span style="color:#aaa">No balances found.</span>';

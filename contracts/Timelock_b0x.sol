@@ -93,16 +93,6 @@ library MulDiv {
         }
     }
 
-    /// @dev Same as {mulDiv}, but rounds the result up instead of down (ceiling division).
-    function mulDivRoundingUp(uint256 x, uint256 y, uint256 denominator) internal pure returns (uint256 result) {
-        result = mulDiv(x, y, denominator);
-        unchecked {
-            if (mulmod(x, y, denominator) > 0) {
-                require(result < type(uint256).max, "MulDiv: overflow on rounding up");
-                result += 1;
-            }
-        }
-    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -190,7 +180,6 @@ interface ILPPool {
 
 interface IStakingGuess {
     function currentB0x(address forWhom) external view returns (uint256);
-    function perfectWithdraw(uint256 maxLoss) external;
     function stake(uint256 amount) external;
     function withdraw(uint256 amount, uint256 maxLoss) external;
     function balanceOf(address account) external view returns (uint256);
@@ -233,6 +222,9 @@ contract TimeLockVault {
             
     /// @notice Owner of contract and all assets inside
     address public owner;
+    
+    /// @notice Allowed to call B0xGuess Staking methods for the vault. Advanced. No withdrawability.
+    address public GuessDepoCaller;
             
     /// @notice Unlock Time
     uint256 public immutable unlockTime;
@@ -253,8 +245,6 @@ contract TimeLockVault {
 
     // ── Events ─────────────────────────────────────────────────
 
-    event TokenDeposited(address indexed token, address indexed from, uint256 amount);
-    event TokenWithdrawn(address indexed token, address indexed to, uint256 amount);
     event NFTStaked(uint256 indexed tokenId, address indexed from);
     event NFTWithdrawn(uint256 indexed tokenId, address indexed to);
     event NFTWithdrawnSpecial(uint256 indexed tokenId, address indexed to, address NFTManager, address LiquidityPool);
@@ -272,11 +262,23 @@ contract TimeLockVault {
         _;
     }
     
+    modifier onlyOwnerorGuessDepoCallerorFactory() {
+        if (msg.sender != owner && msg.sender != GuessDepoCaller && msg.sender != factory) require(false, "Not owner of vault or Timelock Factory or GuessDepoCaller");
+        _;
+    }
+    
 
     modifier afterUnlock() {
         if (block.timestamp < unlockTime)
             require(false, "Vault is still locked. Check unlockTime for exact release.");
         _;
+    }
+    
+    
+    /// @notice changes the GuessDepoCaller of the contract, to  allow a delegation of B0xGuess Staking power, no withdrawability on GuessDepoCaller
+    /// @param  newGuessDepoCaller Thew new GuessDepoCaller
+    function change_GuessDepoCaller(address newGuessDepoCaller) public {
+    	GuessDepoCaller = newGuessDepoCaller;
     }
 
     // ── Constructor ────────────────────────────────────────────
@@ -289,6 +291,7 @@ contract TimeLockVault {
         require(_owner != address(0), "zero owner");
         require(_unlockTime > block.timestamp, "unlock must be future");
         owner      = _owner;
+        GuessDepoCaller = GuessDepoCaller;
         unlockTime = _unlockTime;
         factory = _factory;
         
@@ -315,7 +318,6 @@ contract TimeLockVault {
         }
         uint amount = IERC20(token).balanceOf(address(this));
         IERC20(token).transfer(owner, amount);
-        emit TokenWithdrawn(token, owner, amount);
     }
 
     // ── Uniswap V4 NFT staking ─────────────────────────────────
@@ -412,9 +414,15 @@ contract TimeLockVault {
     }
     
     
-    /// @notice Stakes this contract's entire current B0x token balance into the B0x Guess staking contract.
-    /// @dev Reads this contract's own B0x balance and delegates to `stakeVaultB0xGuess`. Restricted to owner or factory.
-    function stakeVaultMax() public onlyOwnerorFactory {
+    
+    /// @notice Gets B0x rewards from Staking then stakes this contract's entire current B0x token balance into the B0x Guess staking contract.
+    /// @dev Gets B0x rewards from Staking contractReads this contract's own B0x balance and delegates to `stakeVaultB0xGuess`. Restricted to owner or factory.
+    function stakeVaultMaxAndRewards() public onlyOwnerorGuessDepoCallerorFactory {
+    
+        IERC20[] memory b0x12 = new IERC20[](1);
+        b0x12[0] = IERC20(BZEROX_ADDRESS);
+        getRewardForTokensContract(b0x12);
+        
         uint bal = IERC20(BZEROX_ADDRESS).balanceOf(address(this));
         stakeVaultB0xGuess(bal);
     }
@@ -424,7 +432,7 @@ contract TimeLockVault {
     /// @dev Approves the B0xGuess contract to spend `amountOfB0x` from this contract's balance, then calls `stake`. 
     ///      Restricted to owner or factory.
     /// @param amountOfB0x The amount of B0x tokens (already held by this contract) to stake.
-    function stakeVaultB0xGuess(uint256 amountOfB0x) public onlyOwnerorFactory {
+    function stakeVaultB0xGuess(uint256 amountOfB0x) public onlyOwnerorGuessDepoCallerorFactory {
         IERC20(BZEROX_ADDRESS).approve(B0xGuess, amountOfB0x);
         IStakingGuess(B0xGuess).stake(amountOfB0x);
     }
@@ -629,6 +637,7 @@ contract TimeLockVault {
 	ITimeLockFactory(factory).recordOwnershipTransfer(owner, newOwner, address(this));
 
         owner = newOwner; // owner would need to be mutable (drop `immutable`)
+        GuessDepoCaller = owner;
     }
     
 
@@ -1556,3 +1565,4 @@ contract TimeLockFactory {
 
 
 }
+
