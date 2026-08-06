@@ -478,6 +478,11 @@ body.stats-active .content {
         position: relative;
         overflow: hidden;
         will-change: transform;
+        text-decoration: none;
+    }
+
+    .nav-tab:visited {
+        color: rgba(255, 255, 255, 0.7);
     }
 
     .nav-tab::before {
