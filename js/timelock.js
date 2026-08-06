@@ -43,7 +43,7 @@ import { triggerRefresh, isSearchingLogs } from './data-loader.js';
 
 // Address of the deployed TimeLockFactory contract.
 // Update this when the contract is deployed.
-export const TIMELOCK_FACTORY_ADDRESS = "0xB768a9E3aFE3BD3CDc345Ed4FaAE47e26DEAe621";
+export const TIMELOCK_FACTORY_ADDRESS = "0x70030D856891FBEf4328eEBac06cd9663a9f7ab8";
 //old 0x7d1CFE679f6BA6483191ed13Ddf021F5D8cAD5aD
 
 // Must match the factory's MAX_PAGE_SIZE constant.
@@ -120,7 +120,8 @@ const TIMELOCK_FACTORY_ABI = [
         "inputs": [
             { "internalType": "address[]", "name": "contractsToWithdrawFrom", "type": "address[]" },
             { "internalType": "uint256[][]", "name": "tokenIds", "type": "uint256[][]" },
-            { "internalType": "IERC20[][]", "name": "ERC20sToGetRewardAndWithdraw", "type": "address[][]" }
+            { "internalType": "IERC20[][]", "name": "ERC20sToGetRewardAndWithdraw", "type": "address[][]" },
+            { "internalType": "uint256", "name": "maxPenaltyOnB0xGuess", "type": "uint256" }
         ],
         "name": "SuperWithdrawer",
         "outputs": [],
@@ -132,6 +133,16 @@ const TIMELOCK_FACTORY_ABI = [
             { "internalType": "address[]", "name": "contractsToDestroy", "type": "address[]" }
         ],
         "name": "SuperDestroyer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "address[]", "name": "contractsInvestBoxInGuess", "type": "address[]" },
+            { "internalType": "uint256", "name": "maxDepositOfB0xPerVault", "type": "uint256" }
+        ],
+        "name": "SuperGuessDepositor",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -293,6 +304,56 @@ const TIMELOCK_VAULT_ABI = [
         "name": "transferOwnership",
         "outputs": [],
         "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    // B0x Guess staking
+    {
+        "inputs": [{ "internalType": "uint256", "name": "amountOfB0x", "type": "uint256" }],
+        "name": "stakeB0xGuess",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "stakeVaultMax",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "uint256", "name": "amountOfB0x", "type": "uint256" }],
+        "name": "stakeVaultB0xGuess",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "withdrawB0xGuess",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "uint256", "name": "maxPenalty", "type": "uint256" }],
+        "name": "withdrawB0xGuessOwner",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "address", "name": "user", "type": "address" }],
+        "name": "BalOfB0xGuess",
+        "outputs": [{ "internalType": "uint256", "name": "currentB0x", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "B0xGuessPenalty",
+        "outputs": [{ "internalType": "uint256", "name": "peanlty", "type": "uint256" }],
+        "stateMutability": "view",
         "type": "function"
     }
 ];
@@ -768,6 +829,23 @@ function _updateMasqueradeBanner() {
     const heading = document.getElementById('timelock-vaults-heading');
     const stakeWarning = document.getElementById('timelock-stake-masquerade-warning');
     const stakeCost = document.getElementById('timelock-stake-masquerade-cost');
+    const b0xGuessStakeWarning = document.getElementById('timelock-b0xguess-stake-masquerade-warning');
+    const b0xGuessVaultStakeSection = document.getElementById('timelock-b0xguess-vault-stake-section');
+    const superWithdrawMaxPenaltyGroup = document.getElementById('timelock-super-withdraw-max-penalty-group');
+
+    // stakeVaultB0xGuess/stakeVaultMax are onlyOwnerorFactory on-chain, with no
+    // permissionless fallback — unlike the plain wallet-stake path above,
+    // there's nothing this section could still do for a masquerading caller
+    // who isn't also the owner, so hide it instead of just warning.
+    const masqueradingAsSomeoneElse = !!masqueradeAddress &&
+        (!window.userAddress || masqueradeAddress.toLowerCase() !== window.userAddress.toLowerCase());
+    if (b0xGuessVaultStakeSection) b0xGuessVaultStakeSection.style.display = masqueradingAsSomeoneElse ? 'none' : '';
+
+    // The Super Withdraw penalty tolerance only ever applies to vaults the
+    // caller owns — while masquerading as someone else, SuperWithdrawer's
+    // non-owner branch always uses zero tolerance regardless of this field, so
+    // showing it would be misleading rather than just unused.
+    if (superWithdrawMaxPenaltyGroup) superWithdrawMaxPenaltyGroup.style.display = masqueradingAsSomeoneElse ? 'none' : '';
 
     if (masqueradeAddress) {
         const short = `${masqueradeAddress.slice(0, 10)}...${masqueradeAddress.slice(-8)}`;
@@ -782,6 +860,7 @@ function _updateMasqueradeBanner() {
         if (heading) heading.textContent = `Vaults for ${short}`;
         if (stakeWarning) stakeWarning.style.display = 'block';
         if (stakeCost) stakeCost.style.display = 'inline';
+        if (b0xGuessStakeWarning) b0xGuessStakeWarning.style.display = 'block';
         document.querySelectorAll('.timelock-owner-wallet-phrase').forEach(el => {
             el.textContent = `the contract owner's wallet(${short})`;
         });
@@ -790,6 +869,7 @@ function _updateMasqueradeBanner() {
         if (heading) heading.textContent = 'Your Timelock Vaults';
         if (stakeWarning) stakeWarning.style.display = 'none';
         if (stakeCost) stakeCost.style.display = 'none';
+        if (b0xGuessStakeWarning) b0xGuessStakeWarning.style.display = 'none';
         document.querySelectorAll('.timelock-owner-wallet-phrase').forEach(el => {
             el.textContent = 'your wallet';
         });
@@ -931,6 +1011,7 @@ export async function loadUserVaults() {
             userVaults = [];
             await renderSuperWithdrawSection();
             await renderSuperDestroySection();
+            await renderSuperGuessDepositSection();
             // The previously selected vault (e.g. one just transferred away) no
             // longer belongs to this account — hide its stale actions panel
             // instead of leaving it displayed below the empty-state message.
@@ -942,7 +1023,7 @@ export async function loadUserVaults() {
 
         const vaultInterface = new ethers.utils.Interface(TIMELOCK_VAULT_ABI);
         const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, provider);
-        const DETAIL_CALLS_PER_VAULT = 5; // unlockTime, isLocked, secondsUntilUnlock, stakedTokenCount, getStakedTokenIdsPaged(0, VAULT_PAGE_SIZE)
+        const DETAIL_CALLS_PER_VAULT = 6; // unlockTime, isLocked, secondsUntilUnlock, stakedTokenCount, getStakedTokenIdsPaged(0, VAULT_PAGE_SIZE), BalOfB0xGuess
 
         const loadedVaults = [];
         // Batch in the same page size as the address pagination above, so a
@@ -958,7 +1039,8 @@ export async function loadUserVaults() {
                     { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('isLocked') },
                     { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('secondsUntilUnlock') },
                     { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('stakedTokenCount') },
-                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('getStakedTokenIdsPaged', [0, VAULT_PAGE_SIZE]) }
+                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('getStakedTokenIdsPaged', [0, VAULT_PAGE_SIZE]) },
+                    { target: addr, allowFailure: true, callData: vaultInterface.encodeFunctionData('BalOfB0xGuess', [addr]) }
                 );
             }
 
@@ -977,13 +1059,17 @@ export async function loadUserVaults() {
             for (let i = 0; i < batchAddrs.length; i++) {
                 const addr = batchAddrs[i];
                 const totalB0xStaked = b0xStakedByVault.get(addr.toLowerCase()) || 0;
-                const [unlockTimeRes, lockedRes, secsLeftRes, countRes, nftIdsRes] = results.slice(
+                const [unlockTimeRes, lockedRes, secsLeftRes, countRes, nftIdsRes, b0xGuessRes] = results.slice(
                     i * DETAIL_CALLS_PER_VAULT, i * DETAIL_CALLS_PER_VAULT + DETAIL_CALLS_PER_VAULT
                 );
 
+                const totalB0xGuess = b0xGuessRes.success
+                    ? parseFloat(ethers.utils.formatUnits(vaultInterface.decodeFunctionResult('BalOfB0xGuess', b0xGuessRes.returnData)[0], 18))
+                    : 0;
+
                 if (!unlockTimeRes.success || !lockedRes.success || !secsLeftRes.success || !countRes.success || !nftIdsRes.success) {
                     console.warn(`Failed to load vault ${addr} via multicall`);
-                    loadedVaults.push({ address: addr, unlockTime: '0', isLocked: false, secondsLeft: 0, stakedTokenIds: [], _stakedTokenTotal: 0, totalB0xStaked });
+                    loadedVaults.push({ address: addr, unlockTime: '0', isLocked: false, secondsLeft: 0, stakedTokenIds: [], _stakedTokenTotal: 0, totalB0xStaked, totalB0xGuess });
                     continue;
                 }
 
@@ -1000,7 +1086,8 @@ export async function loadUserVaults() {
                     secondsLeft: secsLeft.toNumber(),
                     stakedTokenIds: firstPage.map(id => id.toString()),
                     _stakedTokenTotal: totalStaked.toNumber(),
-                    totalB0xStaked
+                    totalB0xStaked,
+                    totalB0xGuess
                 });
             }
 
@@ -1034,10 +1121,12 @@ export async function loadUserVaults() {
         }
         loadedVaults.forEach(v => delete v._stakedTokenTotal);
 
-        // 1) Most B0x staked first.
+        // 1) Most combined B0x exposure first (LP-staked + B0x Guess balance) —
+        //    this is the order SuperWithdrawer/SuperDestroyer/SuperGuessDepositor
+        //    walk, so the vaults with the most at stake get handled first.
         // 2) Tiebreaker: soonest to unlock first.
         loadedVaults.sort((a, b) => {
-            const b0xDiff = b.totalB0xStaked - a.totalB0xStaked;
+            const b0xDiff = vaultB0xPriorityTotal(b) - vaultB0xPriorityTotal(a);
             if (b0xDiff !== 0) return b0xDiff;
             return a.secondsLeft - b.secondsLeft;
         });
@@ -1054,6 +1143,7 @@ export async function loadUserVaults() {
         renderVaultCards(container);
         await renderSuperWithdrawSection();
         await renderSuperDestroySection();
+        await renderSuperGuessDepositSection();
     } catch (err) {
         if (myGeneration !== loadGeneration) return;
         console.error("Error loading vaults:", err);
@@ -1109,10 +1199,11 @@ async function searchVaultByAddress(vaultAddress) {
             return;
         }
 
-        const [unlockTime, locked, secsLeft] = await Promise.all([
+        const [unlockTime, locked, secsLeft, b0xGuessBal] = await Promise.all([
             withRpcRetry(() => vaultContract.unlockTime(), 'unlockTime'),
             withRpcRetry(() => vaultContract.isLocked(), 'isLocked'),
-            withRpcRetry(() => vaultContract.secondsUntilUnlock(), 'secondsUntilUnlock')
+            withRpcRetry(() => vaultContract.secondsUntilUnlock(), 'secondsUntilUnlock'),
+            withRpcRetry(() => vaultContract.BalOfB0xGuess(vaultAddress), 'BalOfB0xGuess').catch(() => ethers.BigNumber.from(0))
         ]);
         if (myGeneration !== loadGeneration) return;
 
@@ -1124,12 +1215,14 @@ async function searchVaultByAddress(vaultAddress) {
             unlockTime: unlockTime.toString(),
             isLocked: locked,
             secondsLeft: secsLeft.toNumber(),
-            stakedTokenIds
+            stakedTokenIds,
+            totalB0xGuess: parseFloat(ethers.utils.formatUnits(b0xGuessBal, 18))
         }];
         singleVaultView = true;
         renderVaultCards(container);
         await renderSuperWithdrawSection();
         await renderSuperDestroySection();
+        await renderSuperGuessDepositSection();
     } catch (err) {
         if (myGeneration !== loadGeneration) return;
         console.error("Error searching for vault:", err);
@@ -1172,6 +1265,15 @@ export function setVaultSortMode(mode) {
     vaultSortMode = mode;
     const container = document.getElementById('timelock-vaults-container');
     renderVaultCards(container);
+}
+
+// Combined B0x exposure used to prioritize which vaults SuperWithdrawer (and
+// the "most staked" card sort) handle first — LP-staked B0x plus whatever's
+// currently sitting in this vault's B0x Guess position, so a vault with a
+// modest LP stake but a large B0x Guess balance doesn't get skipped in favor
+// of one with more LP stake but nothing in B0x Guess.
+function vaultB0xPriorityTotal(vault) {
+    return (vault.totalB0xStaked || 0) + (vault.totalB0xGuess || 0);
 }
 
 // Converts a human-readable B0x amount into its 0xBTC equivalent using the
@@ -1217,10 +1319,12 @@ function renderVaultCards(container) {
         if (userVaults.length > 0) {
             const totalB0x = userVaults.reduce((sum, vault) => sum + (vault.totalB0xStaked || 0), 0);
             const totalOxBtc = convertB0xToOxBtc(totalB0x);
+            const totalB0xGuess = userVaults.reduce((sum, vault) => sum + (vault.totalB0xGuess || 0), 0);
             const timelockLabel = userVaults.length > 1 ? 'Timelocks' : 'Timelock';
             totalEl.style.display = 'block';
             totalEl.innerHTML = `<div>Total B0x Staked in ${timelockLabel}: ${totalB0x.toFixed(4)}</div>` +
-                (totalOxBtc !== null ? `<div style="color:#ff9800">Total 0xBTC Staked in ${timelockLabel}: ${totalOxBtc.toFixed(8)}</div>` : '');
+                (totalOxBtc !== null ? `<div style="color:#ff9800">Total 0xBTC Staked in ${timelockLabel}: ${totalOxBtc.toFixed(8)}</div>` : '') +
+                `<div style="color:#9b6bff">Total B0x in B0x Guess: ${totalB0xGuess.toFixed(4)}</div>`;
         } else {
             totalEl.style.display = 'none';
         }
@@ -1247,7 +1351,7 @@ function renderVaultCards(container) {
         if (vaultSortMode === 'unlock') {
             return a.secondsLeft - b.secondsLeft; // soonest-to-unlock first
         }
-        const b0xDiff = (b.totalB0xStaked || 0) - (a.totalB0xStaked || 0);
+        const b0xDiff = vaultB0xPriorityTotal(b) - vaultB0xPriorityTotal(a);
         if (b0xDiff !== 0) return b0xDiff;
         return a.secondsLeft - b.secondsLeft;
     });
@@ -1273,6 +1377,7 @@ function renderVaultCards(container) {
             <div class="timelock-vault-detail">NFTs in Vault: ${stakedList}</div>
             <div class="timelock-vault-detail">B0x Staked: ${(vault.totalB0xStaked || 0).toFixed(4)}</div>
             ${vaultOxBtcStaked !== null ? `<div class="timelock-vault-detail" style="color:#ff9800">0xBTC Staked: ${vaultOxBtcStaked.toFixed(8)}</div>` : ''}
+            <div class="timelock-vault-detail" style="color:#9b6bff">B0x in B0x Guess: ${(vault.totalB0xGuess || 0).toFixed(4)}</div>
             <button class="btn-primary timelock-select-btn" onclick="Timelock.selectVault('${vault.address}')">
                 ${selectedVaultAddress === vault.address ? 'Selected' : 'Select Vault'}
             </button>
@@ -1362,6 +1467,8 @@ async function refreshVaultStatus(vaultAddress) {
         updateLockGatedButton('timelockWithdrawNFTBtn', locked, 'Withdraw NFT Disabled until vault unlocks');
         updateLockGatedButton('timelockWithdrawTokenBtn', locked, 'Withdraw ERC-20 Token disabled until vault unlocks');
         updateLockGatedButton('timelockSmartWithdrawBtn', locked, 'Smart Contract Withdrawal disabled until vault unlocks');
+        updateLockGatedButton('timelockWithdrawB0xGuessBtn', locked, 'Withdraw B0x from B0x Guess disabled until vault unlocks');
+        updateLockGatedButton('timelockWithdrawB0xGuessOwnerBtn', locked, 'Force Withdraw disabled until vault unlocks');
 
         // Ownership transfer is only possible while the vault is locked — hide
         // the whole card once unlocked rather than leaving a button that
@@ -1370,9 +1477,411 @@ async function refreshVaultStatus(vaultAddress) {
         if (transferSection) transferSection.style.display = locked ? '' : 'none';
 
         await updateExitAllSectionVisibility(vaultAddress, stakedIds.length);
+        await loadB0xGuessStatus(vaultAddress);
     } catch (e) {
         statusEl.innerHTML = `<p style="color:#e55">Could not load vault status: ${e.message}</p>`;
     }
+}
+
+// ============================================
+// B0x GUESS STAKING
+// ============================================
+
+/**
+ * Loads and renders this vault's current B0x Guess position (net-of-fee B0x
+ * value, per BalOfB0xGuess) and the current global penalty (per
+ * B0xGuessPenalty — shared across every vault, since it just forwards to
+ * B0xGuess.penalty()). Also toggles the advanced owner-withdraw button's
+ * gating text so it reflects whether a force-withdraw would currently no-op.
+ */
+async function loadB0xGuessStatus(vaultAddress) {
+    const statusEl = document.getElementById('timelock-b0xguess-status');
+    if (!statusEl) return;
+
+    try {
+        const provider = await getTimelockProvider();
+        const vault = new ethers.Contract(vaultAddress, TIMELOCK_VAULT_ABI, provider);
+        const vaultInterface = new ethers.utils.Interface(TIMELOCK_VAULT_ABI);
+        const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, provider);
+
+        const erc20Iface = new ethers.utils.Interface(ERC20_MINIMAL_ABI);
+        const calls = [
+            { target: vaultAddress, allowFailure: true, callData: vaultInterface.encodeFunctionData('BalOfB0xGuess', [vaultAddress]) },
+            { target: vaultAddress, allowFailure: true, callData: vaultInterface.encodeFunctionData('B0xGuessPenalty') },
+            { target: tokenAddresses['B0x'], allowFailure: true, callData: erc20Iface.encodeFunctionData('balanceOf', [vaultAddress]) }
+        ];
+        const [balRes, penaltyRes, vaultB0xRes] = await withRpcRetry(
+            () => multicallContract.aggregate3(calls),
+            'multicall B0x Guess status'
+        );
+        if (!balRes.success || !penaltyRes.success || !vaultB0xRes.success) {
+            throw new Error('multicall B0x Guess status call failed');
+        }
+
+        const [balRaw] = vaultInterface.decodeFunctionResult('BalOfB0xGuess', balRes.returnData);
+        const [penaltyRaw] = vaultInterface.decodeFunctionResult('B0xGuessPenalty', penaltyRes.returnData);
+        const [vaultB0xRaw] = erc20Iface.decodeFunctionResult('balanceOf', vaultB0xRes.returnData);
+
+        lastB0xGuessBalance = balRaw;
+        lastB0xGuessPenalty = penaltyRaw;
+        lastVaultB0xBalance = vaultB0xRaw;
+
+        const fmt = (n) => {
+            if (n === 0) return '0';
+            if (n < 0.000001) return n.toExponential(4);
+            if (n < 0.001)    return n.toPrecision(4);
+            return n.toPrecision(6).replace(/\.?0+$/, '');
+        };
+        const balDisplay = parseFloat(ethers.utils.formatUnits(balRaw, 18));
+        const penaltyDisplay = parseFloat(ethers.utils.formatUnits(penaltyRaw, 18));
+        const vaultB0xDisplay = parseFloat(ethers.utils.formatUnits(vaultB0xRaw, 18));
+
+        statusEl.innerHTML = `
+            <div class="timelock-status-row" style="font-size:2em"><b>Vault's B0x Guess Balance:</b> ${fmt(balDisplay)} B0x</div>`;
+
+        // These two duplicate the top summary above but live right next to where
+        // they're actually decision-relevant: the vault's loose B0x balance next
+        // to the "stake from vault" amount input, and the current penalty right
+        // above the "max penalty to accept" input for a forced withdrawal.
+        const vaultBalanceInlineEl = document.getElementById('timelock-b0xguess-vault-balance-inline');
+        if (vaultBalanceInlineEl) vaultBalanceInlineEl.textContent = `Vault's current B0x balance: ${fmt(vaultB0xDisplay)} B0x`;
+
+        const penaltyInlineEl = document.getElementById('timelock-b0xguess-penalty-inline');
+        if (penaltyInlineEl) penaltyInlineEl.textContent = `Current Global Penalty: ${fmt(penaltyDisplay)} B0x (shared across all vaults — outstanding unresolved bet winnings owed by B0x Guess)`;
+    } catch (e) {
+        statusEl.innerHTML = `<p style="color:#e55">Could not load B0x Guess status: ${e.message}</p>`;
+    }
+}
+
+// Cached from the last loadB0xGuessStatus call so withdraw handlers can warn
+// the user when a withdrawal is about to silently no-op (B0xGuess.withdraw
+// returns early, without reverting, whenever the caller's tolerated maxLoss
+// is below the current penalty — see contracts/B0xGuess.sol).
+let lastB0xGuessBalance = ethers.BigNumber.from(0);
+let lastB0xGuessPenalty = ethers.BigNumber.from(0);
+
+// Vault's own loose (unstaked) B0x balance, from the last loadB0xGuessStatus
+// call — used by the "From Vault Balance" stake buttons below.
+let lastVaultB0xBalance = ethers.BigNumber.from(0);
+
+/**
+ * Reads the connected wallet's B0x balance and fills the stake amount input.
+ */
+export async function setMaxStakeB0xGuessAmount() {
+    const amountInput = document.getElementById('timelock-b0xguess-stake-amount');
+    if (!window.userAddress) {
+        showButtonToast('error', 'Not Connected', 'Connect your wallet first.');
+        return;
+    }
+    try {
+        const readProvider = await getTimelockProvider();
+        const tokenContract = new ethers.Contract(tokenAddresses['B0x'], ERC20_MINIMAL_ABI, readProvider);
+        const rawBal = await withRpcRetry(() => tokenContract.balanceOf(window.userAddress), 'balanceOf');
+        if (amountInput) amountInput.value = ethers.utils.formatUnits(rawBal, 18);
+    } catch (e) {
+        console.error('[Timelock] setMaxStakeB0xGuessAmount error:', e);
+        showButtonToast('error', 'Error', 'Could not fetch your B0x wallet balance.');
+    }
+}
+
+/**
+ * Stakes B0x from the connected wallet into the selected vault's B0x Guess
+ * position. Permissionless on-chain — anyone can stake B0x into any vault,
+ * so masquerading users get an explicit warning before proceeding.
+ */
+export async function stakeB0xGuessToVault() {
+    setButtonToastAnchor('timelockStakeB0xGuessBtn');
+    try {
+    if (!window.walletConnected) await window.connectWallet();
+    if (!selectedVaultAddress) {
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
+        return;
+    }
+
+    const amountInput = document.getElementById('timelock-b0xguess-stake-amount');
+    const amountStr = amountInput?.value?.trim();
+    if (!amountStr || isNaN(amountStr) || Number(amountStr) <= 0) {
+        showButtonToast('error', 'Invalid Amount', 'Please enter a valid amount of B0x.');
+        return;
+    }
+
+    const isMasquerading = masqueradeAddress &&
+        (!window.userAddress || masqueradeAddress.toLowerCase() !== window.userAddress.toLowerCase());
+    const confirmed = window.confirm(
+        `You are about to stake ${amountStr} B0x from your wallet into this vault's B0x Guess position.\n\n` +
+        `Vault: ${selectedVaultAddress}\n\n` +
+        (isMasquerading
+            ? `⚠️ MASQUERADE MODE — this vault belongs to someone else. Your B0x will be timelocked in THEIR vault; only its owner can force an early withdrawal.\n\n`
+            : ``) +
+        `This B0x will be locked alongside the rest of the vault's assets until it unlocks (or an owner force-withdraw, if applicable).\n\n` +
+        `Are you sure you want to proceed?`
+    );
+    if (!confirmed) return;
+
+    disableBtn('timelockStakeB0xGuessBtn');
+
+    try {
+        const amount = ethers.utils.parseUnits(amountStr, 18);
+
+        showButtonToast('info', 'Approving B0x', 'Approving the vault to pull B0x from your wallet. Confirm in wallet.');
+        await approveIfNeeded(tokenAddresses['B0x'], selectedVaultAddress, amount, true);
+
+        const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
+        showButtonToast('info', 'Staking B0x', `Staking ${amountStr} B0x into B0x Guess. Confirm in wallet.`);
+        const tx = await vaultContract.stakeB0xGuess(amount);
+        await tx.wait();
+
+        showButtonToast('success', 'B0x Staked!', `${amountStr} B0x is now staked in this vault's B0x Guess position.`);
+        if (amountInput) amountInput.value = '';
+        await loadB0xGuessStatus(selectedVaultAddress);
+    } catch (err) {
+        console.error('stakeB0xGuessToVault error:', err);
+        showButtonToast('error', 'Stake Failed', decodeVaultError(err));
+    } finally {
+        enableBtn('timelockStakeB0xGuessBtn');
+    }
+    } finally { clearButtonToastAnchor(); }
+}
+
+/**
+ * Reads the selected vault's own (loose, unstaked) B0x balance and fills the
+ * "from vault balance" stake amount input — distinct from setMaxStakeB0xGuessAmount,
+ * which reads the connected wallet's balance instead.
+ */
+export async function setMaxVaultStakeB0xGuessAmount() {
+    const amountInput = document.getElementById('timelock-b0xguess-vault-stake-amount');
+    if (!selectedVaultAddress) {
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
+        return;
+    }
+    try {
+        const readProvider = await getTimelockProvider();
+        const tokenContract = new ethers.Contract(tokenAddresses['B0x'], ERC20_MINIMAL_ABI, readProvider);
+        const rawBal = await withRpcRetry(() => tokenContract.balanceOf(selectedVaultAddress), 'balanceOf');
+        if (amountInput) amountInput.value = ethers.utils.formatUnits(rawBal, 18);
+    } catch (e) {
+        console.error('[Timelock] setMaxVaultStakeB0xGuessAmount error:', e);
+        showButtonToast('error', 'Error', 'Could not fetch the vault\'s B0x balance.');
+    }
+}
+
+/**
+ * Stakes B0x the vault ALREADY holds (e.g. from deposits or claimed rewards)
+ * into its own B0x Guess position — no wallet approval needed, since the
+ * vault approves B0xGuess for itself. Restricted on-chain to the vault's
+ * owner or the factory (stakeVaultB0xGuess's onlyOwnerorFactory modifier), so
+ * this will revert for a masquerading caller who isn't also the owner.
+ */
+export async function stakeVaultB0xGuessFromVault() {
+    setButtonToastAnchor('timelockStakeVaultB0xGuessBtn');
+    try {
+    if (!window.walletConnected) await window.connectWallet();
+    if (!selectedVaultAddress) {
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
+        return;
+    }
+
+    const amountInput = document.getElementById('timelock-b0xguess-vault-stake-amount');
+    const amountStr = amountInput?.value?.trim();
+    if (!amountStr || isNaN(amountStr) || Number(amountStr) <= 0) {
+        showButtonToast('error', 'Invalid Amount', 'Please enter a valid amount of B0x.');
+        return;
+    }
+
+    disableBtn('timelockStakeVaultB0xGuessBtn');
+
+    try {
+        const amount = ethers.utils.parseUnits(amountStr, 18);
+        const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
+        showButtonToast('info', 'Staking From Vault', `Staking ${amountStr} B0x from the vault's own balance into B0x Guess. Confirm in wallet.`);
+        const tx = await vaultContract.stakeVaultB0xGuess(amount);
+        await tx.wait();
+
+        showButtonToast('success', 'B0x Staked!', `${amountStr} B0x is now staked in this vault's B0x Guess position.`);
+        if (amountInput) amountInput.value = '';
+        await loadB0xGuessStatus(selectedVaultAddress);
+    } catch (err) {
+        console.error('stakeVaultB0xGuessFromVault error:', err);
+        showButtonToast('error', 'Stake Failed', decodeVaultError(err));
+    } finally {
+        enableBtn('timelockStakeVaultB0xGuessBtn');
+    }
+    } finally { clearButtonToastAnchor(); }
+}
+
+/**
+ * Stakes the vault's ENTIRE current loose B0x balance into B0x Guess in one
+ * click (stakeVaultMax), rather than requiring an amount to be entered.
+ * Same owner-or-factory restriction as stakeVaultB0xGuessFromVault.
+ */
+export async function stakeAllVaultB0xGuess() {
+    setButtonToastAnchor('timelockStakeAllVaultB0xGuessBtn');
+    try {
+    if (!window.walletConnected) await window.connectWallet();
+    if (!selectedVaultAddress) {
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
+        return;
+    }
+
+    disableBtn('timelockStakeAllVaultB0xGuessBtn');
+
+    try {
+        const readProvider = await getTimelockProvider();
+        const tokenContract = new ethers.Contract(tokenAddresses['B0x'], ERC20_MINIMAL_ABI, readProvider);
+        const vaultBal = await withRpcRetry(() => tokenContract.balanceOf(selectedVaultAddress), 'balanceOf');
+        if (vaultBal.isZero()) {
+            showButtonToast('error', 'No Balance', 'This vault has no loose B0x balance to stake.');
+            return;
+        }
+
+        const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
+        showButtonToast('info', 'Staking From Vault', `Staking the vault's entire B0x balance (${ethers.utils.formatUnits(vaultBal, 18)}) into B0x Guess. Confirm in wallet.`);
+        const tx = await vaultContract.stakeVaultMax();
+        await tx.wait();
+
+        showButtonToast('success', 'B0x Staked!', `This vault's B0x balance is now staked in its B0x Guess position.`);
+        await loadB0xGuessStatus(selectedVaultAddress);
+    } catch (err) {
+        console.error('stakeAllVaultB0xGuess error:', err);
+        showButtonToast('error', 'Stake Failed', decodeVaultError(err));
+    } finally {
+        enableBtn('timelockStakeAllVaultB0xGuessBtn');
+    }
+    } finally { clearButtonToastAnchor(); }
+}
+
+/**
+ * Withdraws the vault's B0x Guess position back into the vault (afterUnlock,
+ * permissionless — anyone may call this once unlocked). Note: B0xGuess.withdraw
+ * silently no-ops (no revert) if there's any outstanding penalty, since the
+ * vault always passes maxLoss=0 here — we warn the user rather than reporting
+ * a false success.
+ */
+export async function withdrawB0xGuessFromVault() {
+    setButtonToastAnchor('timelockWithdrawB0xGuessBtn');
+    try {
+    if (!window.walletConnected) await window.connectWallet();
+    if (!selectedVaultAddress) {
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
+        return;
+    }
+
+    disableBtn('timelockWithdrawB0xGuessBtn');
+
+    try {
+        const readProvider = await getTimelockProvider();
+        const vaultRead = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, readProvider);
+        const isLocked = await withRpcRetry(() => vaultRead.isLocked(), 'isLocked');
+        if (isLocked) {
+            const secsLeft = await withRpcRetry(() => vaultRead.secondsUntilUnlock(), 'secondsUntilUnlock');
+            showButtonToast('error', 'Still Locked', `Vault unlocks in ${formatCountdown(secsLeft.toNumber())}. Withdrawals are only allowed after unlock.`);
+            return;
+        }
+
+        const balBefore = await withRpcRetry(() => vaultRead.BalOfB0xGuess(selectedVaultAddress), 'BalOfB0xGuess');
+        const penaltyNow = await withRpcRetry(() => vaultRead.B0xGuessPenalty(), 'B0xGuessPenalty');
+        if (balBefore.gt(0) && penaltyNow.gt(0)) {
+            const proceed = window.confirm(
+                `⚠️ There is currently an outstanding B0x Guess penalty of ${ethers.utils.formatUnits(penaltyNow, 18)} B0x.\n\n` +
+                `This vault's own withdrawB0xGuess() only tolerates zero penalty, so B0x Guess will silently do nothing (the transaction will still succeed on-chain, but no B0x will move).\n\n` +
+                `Only the vault owner can override this via the Advanced Options below. Send this no-op transaction anyway?`
+            );
+            if (!proceed) return;
+        }
+
+        const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
+        showButtonToast('info', 'Withdrawing B0x', 'Withdrawing this vault\'s B0x Guess position. Confirm in wallet.');
+        const tx = await vaultContract.withdrawB0xGuess();
+        await tx.wait();
+
+        await loadB0xGuessStatus(selectedVaultAddress);
+        if (lastB0xGuessBalance.eq(balBefore) && balBefore.gt(0)) {
+            showButtonToast('info', 'No Change', 'Transaction succeeded, but B0x Guess did not release any B0x (outstanding penalty exceeds this call\'s zero tolerance).');
+        } else {
+            showButtonToast('success', 'B0x Withdrawn!', 'B0x Guess position withdrawn back into the vault.');
+        }
+    } catch (err) {
+        console.error('withdrawB0xGuessFromVault error:', err);
+        showButtonToast('error', 'Withdrawal Failed', decodeVaultError(err));
+    } finally {
+        enableBtn('timelockWithdrawB0xGuessBtn');
+    }
+    } finally { clearButtonToastAnchor(); }
+}
+
+/**
+ * Shows/hides the owner-only advanced withdraw options under the Withdraw
+ * B0x from B0x Guess section.
+ */
+export function toggleB0xGuessAdvanced() {
+    const panel = document.getElementById('timelock-b0xguess-advanced');
+    const btn = document.getElementById('timelockB0xGuessAdvancedToggle');
+    if (!panel) return;
+    const showing = panel.style.display !== 'none';
+    panel.style.display = showing ? 'none' : 'block';
+    if (btn) btn.textContent = showing ? 'Show Advanced Options' : 'Hide Advanced Options';
+}
+
+/**
+ * Owner-only forced withdrawal from B0x Guess, tolerating up to the given
+ * max penalty (see withdrawB0xGuessOwner in contracts/Timelock_b0x.sol).
+ * Like the plain withdraw, this silently no-ops on-chain (no revert) if the
+ * entered tolerance is still below the current penalty.
+ */
+export async function withdrawB0xGuessOwnerFromVault() {
+    setButtonToastAnchor('timelockWithdrawB0xGuessOwnerBtn');
+    try {
+    if (!window.walletConnected) await window.connectWallet();
+    if (!selectedVaultAddress) {
+        showButtonToast('error', 'No Vault Selected', 'Please select a vault first.');
+        return;
+    }
+
+    const maxPenaltyInput = document.getElementById('timelock-b0xguess-max-penalty');
+    const maxPenaltyStr = maxPenaltyInput?.value?.trim();
+    if (!maxPenaltyStr || isNaN(maxPenaltyStr) || Number(maxPenaltyStr) < 0) {
+        showButtonToast('error', 'Invalid Amount', 'Please enter the max penalty (in B0x) you\'re willing to tolerate.');
+        return;
+    }
+
+    const maxPenalty = ethers.utils.parseUnits(maxPenaltyStr, 18);
+    const penaltyNow = lastB0xGuessPenalty;
+    const confirmed = window.confirm(
+        `⚠️ Owner Force-Withdraw\n\n` +
+        `This withdraws the vault's entire B0x Guess position, tolerating up to ${maxPenaltyStr} B0x of penalty.\n\n` +
+        (penaltyNow.gt(maxPenalty)
+            ? `The current penalty (${ethers.utils.formatUnits(penaltyNow, 18)} B0x) is ABOVE your tolerance — B0x Guess will silently do nothing, though the transaction will still succeed on-chain.\n\n`
+            : ``) +
+        `Only proceed if you understand you may sacrifice up to that much B0x. Are you sure?`
+    );
+    if (!confirmed) return;
+
+    disableBtn('timelockWithdrawB0xGuessOwnerBtn');
+
+    try {
+        const readProvider = await getTimelockProvider();
+        const vaultRead = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, readProvider);
+        const balBefore = await withRpcRetry(() => vaultRead.BalOfB0xGuess(selectedVaultAddress), 'BalOfB0xGuess');
+
+        const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
+        showButtonToast('info', 'Force Withdrawing', 'Sending owner-only force withdraw. Confirm in wallet.');
+        const tx = await vaultContract.withdrawB0xGuessOwner(maxPenalty);
+        await tx.wait();
+
+        await loadB0xGuessStatus(selectedVaultAddress);
+        if (lastB0xGuessBalance.eq(balBefore) && balBefore.gt(0)) {
+            showButtonToast('info', 'No Change', 'Transaction succeeded, but B0x Guess did not release any B0x (penalty still exceeds your tolerance).');
+        } else {
+            showButtonToast('success', 'B0x Force-Withdrawn!', 'B0x Guess position withdrawn back into the vault.');
+            if (maxPenaltyInput) maxPenaltyInput.value = '';
+        }
+    } catch (err) {
+        console.error('withdrawB0xGuessOwnerFromVault error:', err);
+        showButtonToast('error', 'Withdrawal Failed', decodeVaultError(err));
+    } finally {
+        enableBtn('timelockWithdrawB0xGuessOwnerBtn');
+    }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // Disables a withdrawal button with an explanatory label while the vault is
@@ -2229,10 +2738,14 @@ async function findVaultsWithLooseB0xBalance(vaults) {
  *
  * Once that NFT-driven portion is picked, and only while the batch is still
  * thin (under SUPER_WITHDRAW_LOOSE_SWEEP_NFT_THRESHOLD total NFTs) and there's
- * still room under the per-run vault cap, this also multicall-checks the
- * unlocked vaults with nothing staked for a loose B0x balance and folds in any
- * that have one — with an empty tokenIds entry, so the same transaction just
- * claims their B0x / 0xBTC / WETH reward balances alongside the NFT withdrawals.
+ * still room under the per-run vault cap, this also checks the unlocked
+ * vaults with nothing staked for a loose B0x balance (multicall) or a B0x
+ * Guess balance (already loaded, no extra RPC) and folds in any that have
+ * either — with an empty tokenIds entry, so the same transaction still
+ * withdraws their B0x Guess position and claims their B0x / 0xBTC / WETH
+ * reward balances alongside the NFT withdrawals (both
+ * withdraw_Multiple_NFTs_And_ERC20s and its _OWNERONLY variant always attempt
+ * the B0xGuess withdrawal regardless of tokenIds — see Timelock_b0x.sol).
  */
 async function computeSuperWithdrawBatch() {
     const unlockedVaults = userVaults.filter(v => !v.isLocked);
@@ -2257,7 +2770,26 @@ async function computeSuperWithdrawBatch() {
 
     let sweptEmptyVaults = [];
     if (totalNFTs < SUPER_WITHDRAW_LOOSE_SWEEP_NFT_THRESHOLD && included.length < SUPER_WITHDRAW_MAX_VAULTS_PER_RUN && emptyUnlockedVaults.length > 0) {
-        const withBalance = await findVaultsWithLooseB0xBalance(emptyUnlockedVaults);
+        const withLooseBalance = await findVaultsWithLooseB0xBalance(emptyUnlockedVaults);
+        const looseAddrs = new Set(withLooseBalance.map(v => v.address));
+
+        // Empty vaults with a real B0x Guess balance but nothing loose are worth
+        // sweeping too — the underlying vault call withdraws B0x Guess
+        // unconditionally, so this is the only way those otherwise-untouched
+        // vaults get included at all.
+        const withGuessOnlyBalance = emptyUnlockedVaults.filter(
+            v => !looseAddrs.has(v.address) && (v.totalB0xGuess || 0) > 0
+        );
+
+        // Biggest combined exposure first (loose B0x + B0x Guess balance) — if
+        // the room-for-vaults cap below truncates this list, the vaults with
+        // the most at stake are the ones that make it in.
+        const withBalance = [...withLooseBalance, ...withGuessOnlyBalance].sort((a, b) => {
+            const aTotal = (a.looseB0xBalance ? parseFloat(ethers.utils.formatUnits(a.looseB0xBalance, 18)) : 0) + (a.totalB0xGuess || 0);
+            const bTotal = (b.looseB0xBalance ? parseFloat(ethers.utils.formatUnits(b.looseB0xBalance, 18)) : 0) + (b.totalB0xGuess || 0);
+            return bTotal - aTotal;
+        });
+
         const roomForVaults = SUPER_WITHDRAW_MAX_VAULTS_PER_RUN - included.length;
         sweptEmptyVaults = withBalance.slice(0, roomForVaults);
         for (const vault of sweptEmptyVaults) {
@@ -2300,11 +2832,11 @@ async function renderSuperWithdrawSection() {
         notes.push(`${capSkippedCount} more unlocked vault${capSkippedCount === 1 ? '' : 's'} with staked NFTs won't fit in this run (capped at ${SUPER_WITHDRAW_MAX_VAULTS_PER_RUN} vaults / ${SUPER_WITHDRAW_NFT_CAP} NFTs per transaction) — run it again afterward to pick up the rest.`);
     }
     if (sweptEmptyVaults.length > 0) {
-        notes.push(`${sweptEmptyVaults.length} unlocked vault${sweptEmptyVaults.length === 1 ? '' : 's'} with nothing staked ${sweptEmptyVaults.length === 1 ? 'has' : 'have'} a loose B0x balance, so ${sweptEmptyVaults.length === 1 ? "it's" : "they're"} included too, just to claim B0x / 0xBTC / WETH rewards.`);
+        notes.push(`${sweptEmptyVaults.length} unlocked vault${sweptEmptyVaults.length === 1 ? '' : 's'} with nothing staked ${sweptEmptyVaults.length === 1 ? 'has' : 'have'} a loose B0x balance and/or a B0x Guess position, so ${sweptEmptyVaults.length === 1 ? "it's" : "they're"} included too, to claim B0x / 0xBTC / WETH rewards and withdraw B0x Guess.`);
     }
     const stillEmpty = emptyUnlockedVaults.length - sweptEmptyVaults.length;
     if (stillEmpty > 0) {
-        notes.push(`${stillEmpty} other unlocked vault${stillEmpty === 1 ? '' : 's'} ${stillEmpty === 1 ? 'has' : 'have'} nothing staked and no loose B0x, so ${stillEmpty === 1 ? "it isn't" : "they aren't"} part of this batch.`);
+        notes.push(`${stillEmpty} other unlocked vault${stillEmpty === 1 ? '' : 's'} ${stillEmpty === 1 ? 'has' : 'have'} nothing staked, no loose B0x, and no B0x Guess balance, so ${stillEmpty === 1 ? "it isn't" : "they aren't"} part of this batch.`);
     }
 
     summaryEl.innerHTML =
@@ -2312,6 +2844,23 @@ async function renderSuperWithdrawSection() {
         `from <strong>${included.length}</strong> of your <strong>${unlockedVaults.length}</strong> unlocked vaults in one transaction, biggest stakers first.` +
         (notes.length > 0 ? ' ' + notes.join(' ') : '') +
         `</div>${listHtml}`;
+
+    // B0xGuessPenalty() is the same value on every vault (a passthrough to the
+    // global B0xGuess.penalty()), so any included vault works to read it —
+    // shown next to the max-penalty input since no vault needs to be selected
+    // to reach this section.
+    const penaltyInlineEl = document.getElementById('timelock-super-withdraw-penalty-inline');
+    if (penaltyInlineEl && included.length > 0) {
+        try {
+            const readProvider = await getTimelockProvider();
+            const anyVault = new ethers.Contract(included[0].address, TIMELOCK_VAULT_ABI, readProvider);
+            const penaltyRaw = await withRpcRetry(() => anyVault.B0xGuessPenalty(), 'B0xGuessPenalty');
+            const penaltyDisplay = parseFloat(ethers.utils.formatUnits(penaltyRaw, 18));
+            penaltyInlineEl.textContent = `Current Global Penalty: ${penaltyDisplay.toFixed(4)} B0x (shared across all vaults — outstanding unresolved bet winnings owed by B0x Guess)`;
+        } catch (e) {
+            console.warn('[Timelock] Could not fetch B0xGuessPenalty for Super Withdraw section:', e);
+        }
+    }
 }
 
 /**
@@ -2344,13 +2893,19 @@ export async function superWithdrawAll() {
             const tokenIdsArg = included.map(v => v.tokenIds);
             const erc20sArg = included.map(() => rewardTokens);
 
+            const maxPenaltyInput = document.getElementById('timelock-super-withdraw-max-penalty');
+            const maxPenaltyStr = maxPenaltyInput?.value?.trim();
+            const maxPenaltyOnB0xGuess = (maxPenaltyStr && !isNaN(maxPenaltyStr) && Number(maxPenaltyStr) > 0)
+                ? ethers.utils.parseUnits(maxPenaltyStr, 18)
+                : ethers.BigNumber.from(0);
+
             const withdrawMsg = totalNFTs > 0
                 ? `Withdrawing ${totalNFTs} NFT(s) across ${included.length} vault(s). Confirm in your wallet.`
                 : `Claiming B0x / 0xBTC / WETH rewards from ${included.length} vault(s). Confirm in your wallet.`;
             showButtonToast('info', 'Super Withdrawing', withdrawMsg);
 
             const factoryWriteContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, window.signer);
-            const tx = await factoryWriteContract.SuperWithdrawer(contractsToWithdrawFrom, tokenIdsArg, erc20sArg);
+            const tx = await factoryWriteContract.SuperWithdrawer(contractsToWithdrawFrom, tokenIdsArg, erc20sArg, maxPenaltyOnB0xGuess);
             await tx.wait();
 
             showButtonToast('success', 'Super Withdrawal Complete!', `Withdrew from ${included.length} vault(s). Any vault that couldn't be processed was skipped automatically — re-run if some are still unlocked with NFTs staked.`);
@@ -2380,6 +2935,151 @@ export async function superWithdrawAll() {
 }
 
 // ============================================
+// SUPER GUESS DEPOSITOR (EXPERIMENTAL — BATCH CLAIM + RESTAKE INTO B0x GUESS)
+// ============================================
+
+// Cap on how many vaults get processed in one SuperGuessDepositor call — each
+// vault is its own try/catch inside the factory loop (owner check, reward
+// claim, stake), so this bounds per-vault overhead the same way the other
+// Super* caps do.
+const SUPER_GUESS_DEPOSIT_MAX_VAULTS_PER_RUN = 15;
+
+// Only worth surfacing once there are enough LOCKED eligible vaults to make
+// batching worthwhile — locked vaults are this tool's actual differentiator,
+// since SuperWithdrawer already covers unlocked ones. A user with plenty of
+// unlocked vaults but only one locked vault gets no benefit from this over
+// just using the per-vault "Stake From Vault Balance" section once.
+const SUPER_GUESS_DEPOSIT_MIN_LOCKED_VAULTS = 2;
+
+/**
+ * Picks which vaults a SuperGuessDepositor run would touch: any of the user's
+ * vaults with at least one staked NFT (the only source of B0x LP rewards to
+ * claim), biggest stakers first, capped at SUPER_GUESS_DEPOSIT_MAX_VAULTS_PER_RUN.
+ * Unlike SuperWithdrawer, lock state doesn't matter for what gets INCLUDED —
+ * claiming rewards and restaking them into B0x Guess never moves funds out of
+ * the vault, so it works on locked vaults too (stakeVaultB0xGuess has no
+ * afterUnlock gate). Lock state does matter for whether the section is worth
+ * SHOWING at all — see lockedEligibleCount, used by the visibility check in
+ * renderSuperGuessDepositSection.
+ */
+function computeSuperGuessDepositBatch() {
+    const eligible = userVaults
+        .filter(v => v.stakedTokenIds && v.stakedTokenIds.length > 0)
+        .slice()
+        .sort((a, b) => vaultB0xPriorityTotal(b) - vaultB0xPriorityTotal(a));
+
+    const lockedEligibleCount = eligible.filter(v => v.isLocked).length;
+
+    const included = eligible.slice(0, SUPER_GUESS_DEPOSIT_MAX_VAULTS_PER_RUN);
+    const capSkippedCount = eligible.length - included.length;
+
+    return { eligible, included, capSkippedCount, lockedEligibleCount };
+}
+
+/**
+ * Shows/hides and populates the experimental Super Guess Depositor section
+ * based on the current userVaults list. Called anywhere userVaults is
+ * (re)loaded.
+ */
+async function renderSuperGuessDepositSection() {
+    const section = document.getElementById('timelock-super-guess-deposit-section');
+    const summaryEl = document.getElementById('timelock-super-guess-deposit-summary');
+    if (!section || !summaryEl) return;
+
+    // SuperGuessDepositor checks each vault's owner() against the connected
+    // wallet itself, not the masquerade target — same as SuperDestroyer, it
+    // has no permissionless fallback the way SuperWithdrawer does. Offering it
+    // while masquerading as someone else would just send a transaction that
+    // skips every vault (ownerOfVault != msg.sender every time).
+    const masqueradingAsSomeoneElse = !!masqueradeAddress &&
+        (!window.userAddress || masqueradeAddress.toLowerCase() !== window.userAddress.toLowerCase());
+    if (masqueradingAsSomeoneElse) {
+        section.style.display = 'none';
+        return;
+    }
+
+    const { eligible, included, capSkippedCount, lockedEligibleCount } = computeSuperGuessDepositBatch();
+
+    if (lockedEligibleCount < SUPER_GUESS_DEPOSIT_MIN_LOCKED_VAULTS) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+    const listHtml = included.map(v => {
+        const short = v.address.slice(0, 8) + '...' + v.address.slice(-6);
+        return `<div class="timelock-vault-detail">${short} — ${v.stakedTokenIds.length} NFT${v.stakedTokenIds.length === 1 ? '' : 's'} staked</div>`;
+    }).join('');
+
+    // Unlike SuperWithdrawer, re-running this doesn't reach the skipped vaults —
+    // the sort key (totalB0xStaked) doesn't change from claiming/staking B0x
+    // Guess rewards, so a second click would just resubmit this same top-15
+    // list. Say so plainly instead of implying a re-run makes progress.
+    const note = capSkippedCount > 0
+        ? ` ${capSkippedCount} more eligible vault${capSkippedCount === 1 ? '' : 's'} won't fit in this run (capped at ${SUPER_GUESS_DEPOSIT_MAX_VAULTS_PER_RUN} vaults per transaction) and won't be reached by re-running this — use the per-vault Stake From Vault Balance section for those instead.`
+        : '';
+
+    summaryEl.innerHTML =
+        `<div style="margin-bottom:8px">This claims B0x rewards and stakes up to your chosen cap into B0x Guess ` +
+        `across <strong>${included.length}</strong> of your <strong>${eligible.length}</strong> vault(s) with staked NFTs, biggest stakers first. Works on locked vaults too — nothing leaves the vault.${note}</div>${listHtml}`;
+}
+
+/**
+ * Fires the factory's experimental SuperGuessDepositor across the vaults
+ * picked by computeSuperGuessDepositBatch() — one transaction. The factory
+ * verifies caller ownership per vault on-chain before acting, claims B0x
+ * rewards into each vault, then stakes up to maxDepositOfB0xPerVault of the
+ * resulting balance into that vault's B0x Guess position. Any individual
+ * vault that fails (ownership mismatch, claim/stake revert) is skipped
+ * rather than failing the whole batch.
+ */
+export async function superGuessDepositAll() {
+    setButtonToastAnchor('timelockSuperGuessDepositBtn');
+    try {
+        if (!window.walletConnected) await window.connectWallet();
+
+        const { included } = computeSuperGuessDepositBatch();
+        if (included.length === 0) {
+            showButtonToast('info', 'Nothing to Deposit', 'No vaults with staked NFTs right now.');
+            return;
+        }
+
+        const maxInput = document.getElementById('timelock-super-guess-deposit-max');
+        const maxStr = maxInput?.value?.trim();
+        if (!maxStr || isNaN(maxStr) || Number(maxStr) <= 0) {
+            showButtonToast('error', 'Invalid Amount', 'Please enter a max B0x per vault to stake.');
+            return;
+        }
+        const maxDepositOfB0xPerVault = ethers.utils.parseUnits(maxStr, 18);
+
+        disableBtn('timelockSuperGuessDepositBtn');
+
+        try {
+            const contractsInvestBoxInGuess = included.map(v => v.address);
+
+            showButtonToast('info', 'Super Depositing', `Claiming rewards and staking into B0x Guess across ${included.length} vault(s). Confirm in your wallet.`);
+
+            const factoryWriteContract = new ethers.Contract(TIMELOCK_FACTORY_ADDRESS, TIMELOCK_FACTORY_ABI, window.signer);
+            const tx = await factoryWriteContract.SuperGuessDepositor(contractsInvestBoxInGuess, maxDepositOfB0xPerVault);
+            await tx.wait();
+
+            showButtonToast('success', 'Super Deposit Complete!', `Processed ${included.length} vault(s). Any vault that couldn't be handled (e.g. no reward balance right now) was skipped automatically.`);
+
+            await loadUserVaults();
+            if (selectedVaultAddress) {
+                await selectVault(selectedVaultAddress);
+                await loadVaultTokenBalances(selectedVaultAddress);
+            }
+        } catch (err) {
+            console.error('superGuessDepositAll error:', err);
+            showButtonToast('error', 'Super Deposit Failed', decodeVaultError(err));
+        } finally {
+            enableBtn('timelockSuperGuessDepositBtn');
+        }
+    } finally { clearButtonToastAnchor(); }
+}
+
+// ============================================
 // SUPER DESTROYER (EXPERIMENTAL — PERMANENT VAULT DESTRUCTION)
 // ============================================
 
@@ -2390,6 +3090,13 @@ const SUPER_DESTROY_MIN_ZERO_STAKED_UNLOCKED_VAULTS = 2;
 // Above this, a vault has real, non-dust B0x sitting loose in it (deposited
 // but never staked) — not a candidate for this tool at all either way.
 const SUPER_DESTROY_MAX_LOOSE_B0X_WEI = '2000000000000000000'; // 2.0 B0x, 18 decimals
+
+// Above this much B0x still sitting in a vault's B0x Guess position, it's not
+// safe to destroy — withdrawB0xGuess only works after unlock (already true
+// here) and the vault is gone from this site afterward, so any real balance
+// left in B0x Guess should come out first. totalB0xGuess is already a parsed
+// human-readable float (see loadUserVaults), so this compares directly, no wei.
+const SUPER_DESTROY_MAX_B0X_GUESS = 1;
 
 // Cap on how many vaults get destroyed in one SuperDestroyer call — keeps a
 // single tx from growing unbounded when someone has a large pile of empty
@@ -2411,12 +3118,15 @@ function findZeroStakedUnlockedVaults() {
  * candidate vault's loose (unstaked) B0x balanceOf — via one small multicall
  * — when there are multiple zero-staked unlocked vaults to justify it, since
  * that's the only signal that decides whether a vault is safe to destroy.
- * Sorts candidates into "destroyable" (0 loose B0x — safe) and
- * "needs withdraw first" (some loose B0x under the 2.0 dust cap — warn and
- * exclude from the batch so nothing gets destroyed out from under the user).
- * Vaults with 2.0+ loose B0x are left out of both lists entirely. The
- * destroyable list is further capped at SUPER_DESTROY_MAX_VAULTS_PER_RUN per
- * transaction — any extra just wait for a follow-up run.
+ * Sorts candidates into "destroyable" (0 loose B0x, and no more than
+ * SUPER_DESTROY_MAX_B0X_GUESS still staked in B0x Guess — safe), "needs
+ * withdraw first" (some loose B0x under the 2.0 dust cap), and "needs B0x
+ * Guess withdrawal first" (loose B0x is fine, but too much is still staked in
+ * B0x Guess) — the latter two are warned about and excluded from the batch so
+ * nothing gets destroyed out from under the user. Vaults with 2.0+ loose B0x
+ * are left out of all lists entirely. The destroyable list is further capped
+ * at SUPER_DESTROY_MAX_VAULTS_PER_RUN per transaction — any extra just wait
+ * for a follow-up run.
  */
 async function renderSuperDestroySection() {
     const section = document.getElementById('timelock-super-destroy-section');
@@ -2475,20 +3185,26 @@ async function renderSuperDestroySection() {
     const maxLoose = ethers.BigNumber.from(SUPER_DESTROY_MAX_LOOSE_B0X_WEI);
     const destroyable = [];
     const needsWithdrawFirst = [];
+    const needsGuessWithdrawFirst = [];
 
     for (let i = 0; i < candidates.length; i++) {
         const res = results[i];
         if (!res || !res.success || res.returnData === '0x') continue; // unknown balance — skip, don't guess
         const [rawBal] = erc20Iface.decodeFunctionResult('balanceOf', res.returnData);
         if (rawBal.isZero()) {
-            destroyable.push(candidates[i]);
+            const guessAmt = candidates[i].totalB0xGuess || 0;
+            if (guessAmt > SUPER_DESTROY_MAX_B0X_GUESS) {
+                needsGuessWithdrawFirst.push({ vault: candidates[i], guessAmt });
+            } else {
+                destroyable.push(candidates[i]);
+            }
         } else if (rawBal.lt(maxLoose)) {
             needsWithdrawFirst.push({ vault: candidates[i], rawBal });
         }
-        // else: 2.0+ loose B0x sitting in a "0 staked" vault — leave out of both lists.
+        // else: 2.0+ loose B0x sitting in a "0 staked" vault — leave out of all lists.
     }
 
-    if (destroyable.length === 0 && needsWithdrawFirst.length === 0) {
+    if (destroyable.length === 0 && needsWithdrawFirst.length === 0 && needsGuessWithdrawFirst.length === 0) {
         section.style.display = 'none';
         section.dataset.destroyableAddresses = '[]';
         return;
@@ -2517,6 +3233,13 @@ async function renderSuperDestroySection() {
             const short = vault.address.slice(0, 8) + '...' + vault.address.slice(-6);
             const amt = parseFloat(ethers.utils.formatUnits(rawBal, 18));
             return `<div class="timelock-vault-detail" style="color:#f0a500">${short} — ${amt.toFixed(4)} B0x loose, not withdrawn</div>`;
+        }).join('');
+    }
+    if (needsGuessWithdrawFirst.length > 0) {
+        html += `<div style="margin:12px 0;color:#f0a500">⚠️ ${needsGuessWithdrawFirst.length} vault${needsGuessWithdrawFirst.length === 1 ? '' : 's'} still ${needsGuessWithdrawFirst.length === 1 ? 'has' : 'have'} more than ${SUPER_DESTROY_MAX_B0X_GUESS} B0x staked in B0x Guess — <strong>withdraw that first</strong> (see "Withdraw B0x from B0x Guess" on the vault's own panel above). Destroying it won't lose the funds (the vault contract still exists and you still own it), but it'll disappear from this site for good — you'd have to interact with it directly (e.g. via BaseScan) to get them out afterward:</div>`;
+        html += needsGuessWithdrawFirst.map(({ vault, guessAmt }) => {
+            const short = vault.address.slice(0, 8) + '...' + vault.address.slice(-6);
+            return `<div class="timelock-vault-detail" style="color:#f0a500">${short} — ${guessAmt.toFixed(4)} B0x in B0x Guess, not withdrawn</div>`;
         }).join('');
     }
 
@@ -2682,12 +3405,18 @@ export async function transferVaultOwnership() {
 
 /**
  * Approves an ERC-20 spend allowance if the current allowance is insufficient.
+ * By default grants an unlimited allowance so repeat vault/factory interactions
+ * (staking, anti-spam fees, etc.) don't need a fresh approval every time.
+ * Pass `exact: true` to instead approve only `requiredAmount` — used for the
+ * direct B0x Guess deposit flow, where the vault only ever needs to pull the
+ * amount the user is depositing right now.
  */
-async function approveIfNeeded(tokenToApprove, spenderAddress, requiredAmount) {
+async function approveIfNeeded(tokenToApprove, spenderAddress, requiredAmount, exact = false) {
     const tokenContract = new ethers.Contract(tokenToApprove, ERC20_MINIMAL_ABI, window.signer);
     const currentAllowance = await tokenContract.allowance(window.userAddress, spenderAddress);
     if (currentAllowance.lt(requiredAmount)) {
-        const approveTx = await tokenContract.approve(spenderAddress, ethers.constants.MaxUint256);
+        const approveAmount = exact ? requiredAmount : ethers.constants.MaxUint256;
+        const approveTx = await tokenContract.approve(spenderAddress, approveAmount);
         await approveTx.wait();
     }
 }

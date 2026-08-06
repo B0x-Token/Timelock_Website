@@ -475,6 +475,7 @@ window.getRewardStats = Staking.getRewardStats;
 window.startRewardPeriod = Staking.startRewardPeriod;
 window.addRewardToken = Staking.addRewardToken;
 window.fetchAllUniswapFees = Staking.fetchAllUniswapFees;
+window.fetchAllUniswapFeesBelowMinimum = Staking.fetchAllUniswapFeesBelowMinimum;
 window.decreaseLiquidityStaking = Staking.decreaseLiquidityStaking;
 window.increaseLiquidityStaking = Staking.increaseLiquidityStaking;
 window.populateStakingManagementData = Staking.populateStakingManagementData;
