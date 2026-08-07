@@ -1,0 +1,28 @@
+Announcing two new features for B0x Ecosystem that are highly integrated.  
+
+First is our Timelock contract,
+
+In the timelock it it allows users to create a contract that timelock on ERC20 assets, B0x Liquidity Pool Staking Positions, and B0x Guess Staking.
+
+Using this new timelock feature I and @pirateDC plan on depositing our Staking positions into a 4 year timelock.
+
+What this means? Now users can be confident the liquidity will grow deeper and not go anywhere anytime soon.  Now the largest positions are timelocked and regular users can rest easy knowing liquidity will always be there.
+
+The Staking positions in the Timelock will feed into for me at least, my B0x Guess Staking.  So rewards from the Liquidity Pool will incentivize larger and better payouts for B0x Guess.
+
+I will also be staking my spare B0x into B0x Guess in the timelock to help get it started and lock up any leftover B0x.
+
+Timelock Website Direct Link: https://timelock.bzerox.org/?Timelock
+How-To-Guide for Timelock: https://dev.bzerox.org/#how-to-timelock
+SEcond is our B0x Guess contract,
+
+In b0x guess we allow users to wager a guess from 1-97, we then get a random number from Chainlink VRF v2.5 of 0-99.  If your number is less than the guess, you win.
+
+You can invest in the house with straight B0x.
+
+B0x Guess Website Link: https://guess.bzerox.org
+How-To-Guide for Timelock: https://dev.bzerox.org/#how-to-guess
+
+
+
+
