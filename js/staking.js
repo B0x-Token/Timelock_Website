@@ -20,7 +20,8 @@ import {
     MULTICALL_ADDRESS,
     ProofOfWorkAddresss,
     USDCToken,
-    contractAddress_PositionFinderPro
+    contractAddress_PositionFinderPro,
+    B0xGuessAddress
 } from './config.js';
 
 import { positionData, stakingPositionData } from './positions.js';
@@ -1075,6 +1076,15 @@ export async function getRewardStats() {
         "type": "function"
     }];
 
+    // B0xGuess ABI for the staking pool's available balance (balanceOf(B0xGuess) - unreleased)
+    const b0xGuessABI = [{
+        "inputs": [],
+        "name": "unreleased",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    }];
+
     // Owner ABI for admin access checks (Ownable contracts)
     const ownerABI = [{
         "inputs": [],
@@ -1100,6 +1110,7 @@ export async function getRewardStats() {
     const multicallInterface = new ethers.utils.Interface(MULTICALL3_ABI);
     const erc20Interface = new ethers.utils.Interface(erc20ABI);
     const rewardTokensInterface = new ethers.utils.Interface(getRewardTokensABI);
+    const b0xGuessInterface = new ethers.utils.Interface(b0xGuessABI);
 
     console.log("userAddress== ", window.userAddress);
 
@@ -1200,6 +1211,24 @@ export async function getRewardStats() {
             target: contractAddressLPRewardsStaking,
             allowFailure: true,
             callData: rewardTokensInterface.encodeFunctionData("getRewardTokens")
+        },
+        // Calls 26-27: B0x Guess staking pool available balance (2 calls)
+        // available = IERC20(B0x).balanceOf(B0xGuess) - B0xGuess.unreleased()
+        {
+            target: tokenAddresses['B0x'],
+            allowFailure: true,
+            callData: erc20Interface.encodeFunctionData("balanceOf", [B0xGuessAddress])
+        },
+        {
+            target: B0xGuessAddress,
+            allowFailure: true,
+            callData: b0xGuessInterface.encodeFunctionData("unreleased", [])
+        },
+        // Call 28: Max possible circulating B0x supply (1 call)
+        {
+            target: ProofOfWorkAddresss,
+            allowFailure: true,
+            callData: contractInterface.encodeFunctionData("getCirculatingSupply", [])
         }
     ];
 
@@ -1259,7 +1288,10 @@ export async function getRewardStats() {
         rewardEra: rewardEra[0].toString(),
         readjustDifficulty: readjustDifficulty[0].toString(),
         tokensMinted: tokensMinted[0].toString(),
-        maxSupplyForEra: maxSupplyForEra[0].toString()
+        maxSupplyForEra: maxSupplyForEra[0].toString(),
+        lpTotalLiquidity: result3.liquidityInStaking.toString(),
+        lpTotal0xBTCStaked: result3.total0xBTCStaked.toString(),
+        lpTotalB0xStaked: result3.totalB0xStaked.toString()
     };
 
     // Decode tokenSwapper.getOutput result (index 16)
@@ -1271,6 +1303,30 @@ export async function getRewardStats() {
 
     // Update cachedContractStats with the block number from multicall
     window.cachedContractStats.blockNumber = blockNumberFromMulticall.toString();
+
+    // Decode B0x Guess staking pool available balance (indices 26-27)
+    // available = IERC20(B0x).balanceOf(B0xGuess) - B0xGuess.unreleased()
+    try {
+        if (results[26] && results[26].success && results[27] && results[27].success) {
+            const b0xGuessTokenBalance = erc20Interface.decodeFunctionResult("balanceOf", results[26].returnData)[0];
+            const b0xGuessUnreleased = b0xGuessInterface.decodeFunctionResult("unreleased", results[27].returnData)[0];
+            window.cachedContractStats.b0xGuessTokenBalance = b0xGuessTokenBalance.toString();
+            window.cachedContractStats.b0xGuessUnreleased = b0xGuessUnreleased.toString();
+            window.cachedContractStats.b0xGuessAvailableBalance = b0xGuessTokenBalance.sub(b0xGuessUnreleased).toString();
+        }
+    } catch (b0xGuessError) {
+        console.warn("Failed to decode B0x Guess pool balance from multicall:", b0xGuessError);
+    }
+
+    // Decode max possible circulating B0x supply (index 28)
+    try {
+        if (results[28] && results[28].success) {
+            const circulatingSupply = contractInterface.decodeFunctionResult("getCirculatingSupply", results[28].returnData)[0];
+            window.cachedContractStats.circulatingSupply = circulatingSupply.toString();
+        }
+    } catch (circulatingSupplyError) {
+        console.warn("Failed to decode circulating supply from multicall:", circulatingSupplyError);
+    }
 
     // Decode token balances (indices 18-21) and update window.walletBalances
     try {

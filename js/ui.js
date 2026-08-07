@@ -3236,6 +3236,37 @@ export async function updateStatsDisplay(stats) {
             lastBaseBlockEl.textContent = parseInt(stats.blockNumber);
         }
 
+        // Update B0x Guess Available Pool Balance (balanceOf(B0xGuess) - unreleased)
+        const guessPoolBalanceEl = document.querySelector('.stat-value-guessPoolBalance');
+        if (guessPoolBalanceEl && stats.b0xGuessAvailableBalance) {
+            const available = parseFloat(stats.b0xGuessAvailableBalance) / 1e18;
+            const availableMaxDigits = available > 10000 ? 0 : 4;
+            guessPoolBalanceEl.innerHTML = `${available.toLocaleString(undefined, {maximumFractionDigits: availableMaxDigits})} <span class="unit">B0x</span>`;
+        }
+
+        // Update LP Staking Pool current B0x staked
+        const lpB0xStakedEl = document.querySelector('.stat-value-lpB0xStaked');
+        if (lpB0xStakedEl && stats.lpTotalB0xStaked) {
+            const b0xStaked = parseFloat(stats.lpTotalB0xStaked) / 1e18;
+            const b0xStakedMaxDigits = b0xStaked > 10000 ? 0 : 4;
+            lpB0xStakedEl.innerHTML = `${b0xStaked.toLocaleString(undefined, {maximumFractionDigits: b0xStakedMaxDigits})} <span class="unit">B0x</span>`;
+        }
+
+        // Update LP Staking Pool current 0xBTC staked
+        const lp0xBTCStakedEl = document.querySelector('.stat-value-lp0xBTCStaked');
+        if (lp0xBTCStakedEl && stats.lpTotal0xBTCStaked) {
+            const btcStaked = parseFloat(stats.lpTotal0xBTCStaked) / 1e8;
+            const btcStakedMaxDigits = btcStaked > 10000 ? 0 : 4;
+            lp0xBTCStakedEl.innerHTML = `${btcStaked.toLocaleString(undefined, {maximumFractionDigits: btcStakedMaxDigits})} <span class="unit">0xBTC</span>`;
+        }
+
+        // Update Max Possible Circulating B0x (PoW contract's getCirculatingSupply)
+        const circulatingSupplyEl = document.querySelector('.stat-value-circulatingSupply');
+        if (circulatingSupplyEl && stats.circulatingSupply) {
+            const circulating = parseFloat(stats.circulatingSupply) / 1e18;
+            circulatingSupplyEl.innerHTML = `${circulating.toLocaleString(undefined, {maximumFractionDigits: 0})} <span class="unit">B0x</span>`;
+        }
+
         // Update Absolute Max Supply (fixed value: 31,165,100 B0x)
         const absoluteMaxSupplyEl = document.querySelector('.stat-value-AbsoluteMaxSupply');
         if (absoluteMaxSupplyEl) {
