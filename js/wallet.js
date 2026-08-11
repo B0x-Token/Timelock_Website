@@ -186,7 +186,14 @@ function requestWithTimeout(promise, ms = 60000) {
  */
 export async function checkWalletConnection() {
     console.log("Checking wallet connection");
-    if (typeof window.ethereum !== 'undefined' && localStorage.getItem('walletConnected') === 'true') {
+    // Ask the wallet itself, not our own localStorage flag, whether this
+    // site is already authorized. eth_accounts is a silent, read-only,
+    // popup-free EIP-1193 call — always safe regardless of prior state — so
+    // there's no need to gate it. Some mobile in-app browsers (e.g. MetaMask
+    // Android) don't reliably persist localStorage across reloads, which
+    // made this gate skip auto-reconnect entirely even though the wallet
+    // itself still remembered the site was authorized.
+    if (typeof window.ethereum !== 'undefined') {
         // Don't make requests if page is hidden (prevents warning when closing Rabby browser)
         if (window.isPageVisible === false) {
             console.log('Page hidden, skipping wallet connection check');

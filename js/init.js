@@ -234,12 +234,10 @@ export function setupEventListeners() {
         });
     }
 
-    const collectRewardsBtn = document.getElementById('collectRewardsBtn');
-    if (collectRewardsBtn) {
-        collectRewardsBtn.addEventListener('click', async () => {
-            await Staking.collectRewards();
-        });
-    }
+    // Note: Collect Rewards button is wired via inline onclick="collectRewards()"
+    // in index.html, not here — an addEventListener('click') on this id would
+    // now double-fire alongside it, since the button previously had no id
+    // (this listener attachment was silently a no-op) but now does.
 
     // Load More Blocks button (stats page pagination)
     const loadMoreBlocksBtn = document.getElementById('blocks-load-more-btn');

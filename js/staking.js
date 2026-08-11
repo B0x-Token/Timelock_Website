@@ -40,7 +40,10 @@ import {
     showSuccessNotificationCentered,
     showErrorNotificationCentered,
     showInfoNotificationCentered,
-    showAlertDialog
+    showAlertDialog,
+    showButtonToast,
+    setButtonToastAnchor,
+    clearButtonToastAnchor
 } from './ui.js';
 import {
     getTokenNameFromAddress,
@@ -423,6 +426,8 @@ export function populateStakingManagementData() {
  * @returns {Promise<void>}
  */
 export async function collectRewards() {
+    setButtonToastAnchor('collectRewardsBtn');
+    try {
     if (!window.walletConnected) {
         await window.connectWallet();
     }
@@ -460,7 +465,7 @@ export async function collectRewards() {
             window.signer
         );
 
-        showInfoNotification('Collecting Rewards', 'Submitting reward collection transaction...');
+        showButtonToast('info', 'Collecting Rewards', 'Submitting reward collection transaction...');
 
         const rewardTx = await LPStakingContract.getRewardForTokens(tokenAddresses1);
         console.log("Reward collection transaction sent:", rewardTx.hash);
@@ -468,8 +473,7 @@ export async function collectRewards() {
         await rewardTx.wait();
         console.log("Rewards claimed successfully!");
 
-        showSuccessNotificationTop('Rewards Claimed!', 'Your staking rewards have been successfully claimed.', rewardTx.hash);
-        await showAlertDialog("Claimed Rewards SUCCESSFULLY!");
+        showButtonToast('success', 'Rewards Claimed!', `Your staking rewards have been successfully claimed. <a href="https://basescan.org/tx/${rewardTx.hash}" target="_blank" style="color:#10b981;text-decoration:underline;">View on Explorer →</a>`);
 
         // Invalidate cache and cooldown to force fresh data fetch
         window.rewardStatsCache.timestamp = 0;
@@ -481,8 +485,9 @@ export async function collectRewards() {
 
     } catch (error) {
         console.error("Error collecting rewards:", error);
-        showErrorNotification('Reward Collection Failed', error.message || 'Failed to collect rewards');
+        showButtonToast('error', 'Reward Collection Failed', error.message || 'Failed to collect rewards');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // ============================================
@@ -523,19 +528,21 @@ async function stakeUniswapV3NFTWithAuthRetry(LPStakingContract, positionID) {
  * @returns {Promise<void>}
  */
 export async function depositNFTStake() {
+    setButtonToastAnchor('depositNFTStakeBtn');
+    try {
     if (!window.walletConnected) {
         await window.connectWallet();
     }
 
     disableButtonWithSpinner('depositNFTStakeBtn');
-    await showAlertDialog('You are now depositing a Uniswap v4 NFT Position to stake. Withdrawal penalty is 20% to instant withdraw down to 3% after 15 days. 1% after 45 days. It is tracked per NFT, so multiple NFTs will have different withdraw Penalties');
+    showButtonToast('info', 'Depositing NFT', 'You are now depositing a Uniswap v4 NFT Position to stake. Withdrawal penalty is 20% to instant withdraw down to 3% after 15 days. 1% after 45 days. It is tracked per NFT, so multiple NFTs will have different withdraw Penalties', 12000);
 
     const positionSelect = document.querySelector('#staking-deposit-select');
     const selectedPositionId = positionSelect.value;
     const position = positionData?.[selectedPositionId];
 
     if (!position) {
-        showErrorNotificationCentered('Invalid Position', 'Selected position not found');
+        showButtonToast('error', 'Invalid Position', 'Selected position not found');
         enableButton('depositNFTStakeBtn', 'Deposit NFT');
         return;
     }
@@ -587,7 +594,7 @@ export async function depositNFTStake() {
     );
 
     try {
-        showInfoNotificationCentered('Approve the NFT', 'Approve NFT TokenID: ' + positionID + ' for Staking');
+        showButtonToast('info', 'Approve the NFT', 'Approve NFT TokenID: ' + positionID + ' for Staking');
 
         console.log(`Approving NFT token ${positionID}...`);
 
@@ -598,9 +605,9 @@ export async function depositNFTStake() {
         );
 
         console.log("Approval transaction sent:", approveTx.hash);
-        showInfoNotificationCentered('Waiting for approval...', 'Please wait for confirmation');
+        showButtonToast('info', 'Waiting for Approval', 'Please wait for confirmation');
         await approveTx.wait();
-        showSuccessNotificationCentered('Approved NFT Transfer!', 'Now confirm the Stake transaction in your wallet');
+        showButtonToast('success', 'Approved NFT Transfer!', 'Now confirm the Stake transaction in your wallet');
 
         console.log("Approval confirmed!");
         await sleep(2000);
@@ -609,12 +616,12 @@ export async function depositNFTStake() {
         console.log(`Staking NFT token ${positionID}...`);
         const stakeTx = await stakeUniswapV3NFTWithAuthRetry(LPStakingContract, positionID);
 
-        showInfoNotificationCentered('Staking NFT...', 'Please wait for confirmation');
+        showButtonToast('info', 'Staking NFT...', 'Please wait for confirmation');
         console.log("Staking transaction sent:", stakeTx.hash);
         await stakeTx.wait();
         console.log("NFT staked successfully!");
 
-        showSuccessNotificationCentered('NFT Staked Successfully!', 'Transaction confirmed on blockchain');
+        showButtonToast('success', 'NFT Staked Successfully!', 'Transaction confirmed on blockchain');
         enableButton('depositNFTStakeBtn', 'Deposit NFT');
 
         if (window.fetchBalances) await window.fetchBalances();
@@ -624,9 +631,10 @@ export async function depositNFTStake() {
 
     } catch (error) {
         console.error("Error approving/staking NFT:", error);
-        showErrorNotificationCentered('Staking Failed', error.message || 'Failed to stake NFT');
+        showButtonToast('error', 'Staking Failed', error.message || 'Failed to stake NFT');
         enableButton('depositNFTStakeBtn', 'Deposit NFT');
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 /**
