@@ -12,7 +12,7 @@
 
 // Import all modules
 import { initializeChart, fetchPriceData, pricesLoaded } from './charts.js';
-import { checkWalletConnection, setupWalletListeners, connectWallet, disconnectWallet } from './wallet.js';
+import { checkWalletConnection, setupWalletListeners, connectWallet, disconnectWallet, suppressWalletEvents } from './wallet.js';
 import {
     switchTab, switchTab2, switchTabForStats, switchMinerTab, showStatsPageDirect, updateLoadingStatus, showLoadingScreen, hideLoadingScreen,
     initNotificationWidget, updateTokenIcon, updateTokenSelection, updatePositionDropdown,
@@ -981,6 +981,12 @@ let windowListenersSetup = false;
 if (window.ethereum && !windowListenersSetup && localStorage.getItem('walletConnected')) {
     window.ethereum.on('chainChanged', (chainId) => {
         console.log('Chain changed to:', chainId);
+        // Our own connectWallet() calls can fire this event itself (e.g.
+        // switching to Base) — ignore it while that's already in progress.
+        if (suppressWalletEvents) {
+            console.log('Suppressing chainChanged — own connect flow in progress');
+            return;
+        }
         // Don't make requests if page is hidden (prevents warning when closing Rabby browser)
         if (window.isPageVisible === false) {
             console.log('Page hidden, skipping network status update');

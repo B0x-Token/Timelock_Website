@@ -67,6 +67,17 @@ let isConnecting = false;
  */
 export let isDisconnecting = false;
 
+/**
+ * Set for the duration of connectWallet()/quickconnectWallet()'s own
+ * eth_requestAccounts/wallet_switchEthereumChain calls. Those calls fire
+ * their own accountsChanged/chainChanged events as a side effect — without
+ * this flag, the listeners in setupWalletListeners() (and init.js's
+ * chainChanged listener) would treat those as an external change and re-run
+ * overlapping setup work, racing our own connect flow. This is what actually
+ * caused mobile wallets to get stuck "reconnecting forever."
+ */
+export let suppressWalletEvents = false;
+
 
 
 /**
@@ -281,6 +292,7 @@ export async function quickconnectWallet() {
     console.log("Quick Connect Wallet");
 
     setButtonToastAnchor('connectBtn');
+    suppressWalletEvents = true;
     try {
 
     // Reset disconnecting flag when user initiates new connection
@@ -358,7 +370,7 @@ export async function quickconnectWallet() {
 
         return null;
     }
-    } finally { clearButtonToastAnchor(); }
+    } finally { suppressWalletEvents = false; clearButtonToastAnchor(); }
 }
 
 /**
@@ -395,6 +407,9 @@ export async function connectWallet(resumeFromStep = null) {
     console.log("Connect Wallet", resumeFromStep ? `(resuming from: ${resumeFromStep})` : '');
 
     setButtonToastAnchor('connectBtn');
+    // Suppress accountsChanged/chainChanged reactions to our own connect
+    // calls for the duration of this function — see suppressWalletEvents doc.
+    suppressWalletEvents = true;
     try {
 
     // Reset disconnecting flag when user initiates new connection
@@ -664,7 +679,10 @@ export async function connectWallet(resumeFromStep = null) {
             console.log('Network error detected, attempting recovery...');
             connectionState.isRecovering = true;
             await sleep(2000);
-            return connectWallet(connectionState.lastStep);
+            // Awaited (not just returned) so this frame's finally below —
+            // which clears suppressWalletEvents — doesn't run until the
+            // recursive attempt (and its own suppress/clear) fully finishes.
+            return await connectWallet(connectionState.lastStep);
         }
 
         // Handle timeout specifically - wallet extension may still be loading
@@ -679,7 +697,7 @@ export async function connectWallet(resumeFromStep = null) {
 
         return null;
     }
-    } finally { clearButtonToastAnchor(); }
+    } finally { suppressWalletEvents = false; clearButtonToastAnchor(); }
 }
 
 // ============================================================================
@@ -949,6 +967,14 @@ export async function setupWalletListeners() {
     // Handle account changes
     window.ethereum.on('accountsChanged', async (accounts) => {
         console.log('Account changed event:', accounts);
+        // Our own connectWallet()/quickconnectWallet() calls can fire this
+        // event themselves (e.g. first-time authorization) — ignore it while
+        // one of those is already driving the connection to avoid racing our
+        // own setup work.
+        if (suppressWalletEvents) {
+            console.log('Suppressing accountsChanged — own connect flow in progress');
+            return;
+        }
         // Don't process if page is hidden (prevents warning when closing Rabby browser)
         if (window.isPageVisible === false) {
             console.log('Page hidden, skipping account change handling');
