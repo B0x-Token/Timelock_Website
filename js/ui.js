@@ -392,6 +392,11 @@ function _showDialog(overlay, box) {
 }
 
 function _closeDialog(overlay, box, resolve, result) {
+    // Stop blocking taps immediately — don't wait on the fade-out timer, which
+    // can be throttled/delayed if the tab gets backgrounded (e.g. switching to
+    // the wallet app), leaving an invisible-but-still-clickable overlay.
+    overlay.style.pointerEvents = 'none';
+    box.style.pointerEvents = 'none';
     overlay.style.opacity = '0';
     box.style.opacity = '0';
     setTimeout(() => {

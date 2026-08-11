@@ -326,7 +326,11 @@ export async function quickconnectWallet() {
 
             updateWalletUI(userAddress, true);
 
-            await switchToEthereum();
+            // Note: no automatic switch to Ethereum here — fetchBalancesETH
+            // reads via its own independent RPC provider (customRPC_ETH), not
+            // the wallet's active chain, so we stay on Base the whole time.
+            // Anything that actually needs to sign on Ethereum (convert.js,
+            // bridge.js) calls switchToEthereum() itself right before it does.
 
             // Set up event listeners for account changes
             setupWalletListeners();
@@ -587,21 +591,21 @@ export async function connectWallet(resumeFromStep = null) {
         }
 
 
-        // Fetch ETH balances in background (non-blocking)
+        // Fetch ETH balances in background (non-blocking). No chain switch
+        // needed — fetchBalancesETH reads via its own independent RPC
+        // provider (customRPC_ETH), not the wallet's active chain.
         if (window.fetchBalancesETH && userAddress) {
-            switchToEthereum().then(() =>
-                withNetworkRetry(() => window.fetchBalancesETH(
-                    userAddress,
-                    window.tokenAddressesETH,
-                    window.tokenAddressesDecimalsETH,
-                    window.fetchTokenBalanceWithEthersETH,
-                    window.displayWalletBalancesETH,
-                    providerETH,
-                    signerETH,
-                    walletConnected,
-                    connectWallet
-                ), 2, 'fetchBalancesETH')
-            ).then(() => switchToBase())
+            withNetworkRetry(() => window.fetchBalancesETH(
+                userAddress,
+                window.tokenAddressesETH,
+                window.tokenAddressesDecimalsETH,
+                window.fetchTokenBalanceWithEthersETH,
+                window.displayWalletBalancesETH,
+                providerETH,
+                signerETH,
+                walletConnected,
+                connectWallet
+            ), 2, 'fetchBalancesETH')
             .catch(e => console.warn('fetchBalancesETH error:', e));
         }
 
@@ -718,7 +722,7 @@ export async function switchToEthereum(retryCount = 0, maxRetries = 5) {
     };
 
     // Check if already on Ethereum
-    const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+    const currentChainId = await requestWithTimeout(window.ethereum.request({ method: 'eth_chainId' }), 15000);
     if (currentChainId === EthereumConfig.chainId) {
         console.log('Already on Ethereum network');
         providerETH = new ethers.providers.Web3Provider(window.ethereum);
@@ -727,10 +731,10 @@ export async function switchToEthereum(retryCount = 0, maxRetries = 5) {
     }
 
     try {
-        await window.ethereum.request({
+        await requestWithTimeout(window.ethereum.request({
             method: 'wallet_switchEthereumChain',
             params: [{ chainId: EthereumConfig.chainId }]
-        });
+        }));
         console.log('Switched to Ethereum network');
         providerETH = new ethers.providers.Web3Provider(window.ethereum);
         signerETH = providerETH.getSigner();
@@ -738,10 +742,10 @@ export async function switchToEthereum(retryCount = 0, maxRetries = 5) {
         // Chain not added yet
         if (switchError.code === 4902) {
             try {
-                await window.ethereum.request({
+                await requestWithTimeout(window.ethereum.request({
                     method: 'wallet_addEthereumChain',
                     params: [EthereumConfig]
-                });
+                }));
                 console.log('Ethereum network added and switched');
                 providerETH = new ethers.providers.Web3Provider(window.ethereum);
                 signerETH = providerETH.getSigner();
@@ -810,7 +814,7 @@ export async function switchToBase(retryCount = 0, maxRetries = 5) {
     };
 
     // Check if already on Base
-    const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+    const currentChainId = await requestWithTimeout(window.ethereum.request({ method: 'eth_chainId' }), 15000);
     if (currentChainId === baseConfig.chainId) {
         console.log('Already on Base network');
         provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -819,10 +823,10 @@ export async function switchToBase(retryCount = 0, maxRetries = 5) {
     }
 
     try {
-        await window.ethereum.request({
+        await requestWithTimeout(window.ethereum.request({
             method: 'wallet_switchEthereumChain',
             params: [{ chainId: baseConfig.chainId }]
-        });
+        }));
         console.log('Switched to Base network');
         provider = new ethers.providers.Web3Provider(window.ethereum);
         signer = provider.getSigner();
@@ -830,10 +834,10 @@ export async function switchToBase(retryCount = 0, maxRetries = 5) {
         // Chain not added yet
         if (switchError.code === 4902) {
             try {
-                await window.ethereum.request({
+                await requestWithTimeout(window.ethereum.request({
                     method: 'wallet_addEthereumChain',
                     params: [baseConfig]
-                });
+                }));
                 console.log('Base network added and switched');
                 provider = new ethers.providers.Web3Provider(window.ethereum);
                 signer = provider.getSigner();
@@ -1247,7 +1251,6 @@ export async function connect2() {
     }
     previousAct = userAddress;
 
-    await switchToEthereum();
     if (window.fetchBalancesETH && userAddress) {
         await window.fetchBalancesETH(
             userAddress,
