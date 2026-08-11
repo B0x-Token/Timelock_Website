@@ -186,6 +186,21 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Races a wallet RPC request against a timeout so a stuck bridge (e.g.
+ * MetaMask Mobile's in-app browser losing sync with the app) can't hang the
+ * connect flow forever. Rejects with a message containing 'timed out',
+ * matching the existing timeout handling in connectWallet's catch block.
+ */
+function requestWithTimeout(promise, ms = 60000) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Wallet request timed out')), ms)
+        )
+    ]);
+}
+
 // ============================================================================
 // WALLET CONNECTION FUNCTIONS
 // ============================================================================
@@ -280,6 +295,7 @@ export async function quickconnectWallet() {
     // Check if connection is already in progress
     if (isConnecting) {
         console.log('Connection already in progress, ignoring duplicate call');
+        showButtonToast('info', 'Already Connecting', 'A connection request is already pending — check your wallet extension/app.');
         return null;
     }
 
@@ -292,9 +308,9 @@ export async function quickconnectWallet() {
     isConnecting = true;
 
     try {
-        const accounts = await window.ethereum.request({
+        const accounts = await requestWithTimeout(window.ethereum.request({
             method: 'eth_requestAccounts'
-        });
+        }));
 
         if (accounts.length > 0) {
             // Switch to Base network
@@ -398,6 +414,7 @@ export async function connectWallet(resumeFromStep = null) {
     // Check if connection is already in progress
     if (isConnecting && !resumeFromStep) {
         console.log('Connection already in progress, ignoring duplicate call');
+        showButtonToast('info', 'Already Connecting', 'A connection request is already pending — check your wallet extension/app.');
         return null;
     }
 
@@ -437,7 +454,7 @@ export async function connectWallet(resumeFromStep = null) {
         // First try eth_accounts (doesn't require approval, won't hang)
         let accounts = null;
         try {
-            const existingAccounts = await window.ethereum.request({ method: 'eth_accounts' });
+            const existingAccounts = await requestWithTimeout(window.ethereum.request({ method: 'eth_accounts' }), 15000);
             if (existingAccounts && existingAccounts.length > 0) {
                 console.log('Found existing authorized accounts:', existingAccounts.length);
                 accounts = existingAccounts;
@@ -447,7 +464,7 @@ export async function connectWallet(resumeFromStep = null) {
         }
         if (!accounts || accounts.length === 0) {
             console.log('No existing accounts, requesting authorization...');
-            accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            accounts = await requestWithTimeout(window.ethereum.request({ method: 'eth_requestAccounts' }));
         }
         console.log('Accounts received:', accounts?.length || 0);
 
