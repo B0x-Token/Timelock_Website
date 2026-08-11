@@ -78,28 +78,6 @@ export let isDisconnecting = false;
  */
 export let suppressWalletEvents = false;
 
-
-
-/**
- * Wait for the wallet provider to be injected. Just checks window.ethereum
- * exists — does NOT make an RPC call to "verify" it responds. An RPC probe
- * here (e.g. eth_chainId) can itself hang or time out on a slow/busy mobile
- * wallet bridge even when the wallet is perfectly capable of connecting,
- * which used to trigger a page reload — and a reload mid-connection is what
- * actually causes mobile wallets to get stuck "reconnecting forever" (our
- * own connect flow's events land mid-handshake, then auto-reconnect on the
- * fresh page re-triggers the same failure).
- * @param {number} maxWaitMs - Maximum time to wait for provider injection
- * @returns {Promise<boolean>} True if window.ethereum is present
- */
-async function waitForWalletReady(maxWaitMs = 2000) {
-    const startTime = Date.now();
-    while (Date.now() - startTime < maxWaitMs) {
-        if (window.ethereum) return true;
-        await new Promise(r => setTimeout(r, 100));
-    }
-    return !!window.ethereum;
-}
 // ============================================================================
 // WALLET STATE SETTERS
 // ============================================================================
@@ -392,6 +370,15 @@ async function withNetworkRetry(fn, maxRetries = 3, stepName = '') {
 export async function connectWallet(resumeFromStep = null) {
     console.log("Connect Wallet", resumeFromStep ? `(resuming from: ${resumeFromStep})` : '');
 
+    // Simple, synchronous check — no async readiness poll here. By the time
+    // a user has actually clicked "Connect Wallet", window.ethereum has had
+    // the entire page-load to inject; waiting/polling in this click path
+    // only added a way to fail even when the wallet was fine.
+    if (!window.ethereum) {
+        showButtonToast('error', 'Wallet Not Detected', 'Please install a Web3 wallet or refresh manually.');
+        return null;
+    }
+
     setButtonToastAnchor('connectBtn');
     // Suppress accountsChanged/chainChanged reactions to our own connect
     // calls for the duration of this function — see suppressWalletEvents doc.
@@ -426,36 +413,16 @@ export async function connectWallet(resumeFromStep = null) {
     // Set connection lock
     isConnecting = true;
 
-    // Wait briefly for window.ethereum to be injected (handles fresh page
-    // loads where the wallet extension/app hasn't finished injecting yet).
-    console.log('Waiting for wallet to be injected...');
-    const isReady = await waitForWalletReady(2000);
-
-    if (!isReady) {
-        isConnecting = false;
-        showButtonToast('error', 'Wallet Not Detected', 'Please install a Web3 wallet or refresh manually.');
-        return null;
-    }
-
-    console.log('Wallet is ready, checking for accounts...');
-
     try {
-        // First try eth_accounts (doesn't require approval, won't hang)
-        let accounts = null;
-        try {
-            const existingAccounts = await requestWithTimeout(window.ethereum.request({ method: 'eth_accounts' }), 15000);
-            if (existingAccounts && existingAccounts.length > 0) {
-                console.log('Found existing authorized accounts:', existingAccounts.length);
-                accounts = existingAccounts;
-            }
-        } catch (e) {
-            console.log('eth_accounts check failed:', e.message);
-        }
-        if (!accounts || accounts.length === 0) {
-            console.log('No existing accounts, requesting authorization...');
-            accounts = await requestWithTimeout(window.ethereum.request({ method: 'eth_requestAccounts' }));
-        }
-        console.log('Accounts received:', accounts?.length || 0);
+        // Single request — no separate eth_accounts pre-check first. If the
+        // site is already authorized this resolves immediately with no
+        // popup anyway, so the pre-check only added another RPC round-trip
+        // that could itself hang.
+        console.log('Requesting account access...');
+        const accounts = await requestWithTimeout(
+            window.ethereum.request({ method: 'eth_requestAccounts' }),
+            30000
+        );
 
         if (!accounts || accounts.length === 0) {
             console.log('No accounts returned from wallet');
@@ -473,12 +440,14 @@ export async function connectWallet(resumeFromStep = null) {
         localStorage.setItem('walletConnected', 'true');
         localStorage.setItem('walletAddress', userAddress);
 
+        console.log('Ensuring wallet is on Base network...');
+        await switchToBase();
+
         provider = new ethers.providers.Web3Provider(window.ethereum);
         signer = provider.getSigner();
 
         await updateWalletUI(userAddress, true);
         setupWalletListeners();
-        await switchToBase();
 
 
         // PARALLEL GROUP 1: Fetch balances from both chains simultaneously
