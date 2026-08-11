@@ -81,38 +81,24 @@ export let suppressWalletEvents = false;
 
 
 /**
- * Wait for wallet provider to be injected AND responsive
- * @param {number} maxWaitMs - Maximum time to wait for provider
- * @returns {Promise<boolean>} True if provider is ready
+ * Wait for the wallet provider to be injected. Just checks window.ethereum
+ * exists — does NOT make an RPC call to "verify" it responds. An RPC probe
+ * here (e.g. eth_chainId) can itself hang or time out on a slow/busy mobile
+ * wallet bridge even when the wallet is perfectly capable of connecting,
+ * which used to trigger a page reload — and a reload mid-connection is what
+ * actually causes mobile wallets to get stuck "reconnecting forever" (our
+ * own connect flow's events land mid-handshake, then auto-reconnect on the
+ * fresh page re-triggers the same failure).
+ * @param {number} maxWaitMs - Maximum time to wait for provider injection
+ * @returns {Promise<boolean>} True if window.ethereum is present
  */
-async function waitForWalletReady(maxWaitMs = 5000) {
+async function waitForWalletReady(maxWaitMs = 2000) {
     const startTime = Date.now();
-
-
-
-    // Poll for wallet injection (fallback)
-    const pollPromise = (async () => {
-        while (Date.now() - startTime < maxWaitMs) {
-            if (window.ethereum) {
-                // Verify wallet provider responds (not user approval)
-                try {
-                    await Promise.race([
-                        window.ethereum.request({ method: 'eth_chainId' }),
-                        new Promise((_, reject) => 
-                            setTimeout(() => reject(new Error('timeout')), 500)
-                        )
-                    ]);
-                    return true;
-                } catch (e) {
-                    // Provider not ready yet, continue polling
-                }
-            }
-            await new Promise(r => setTimeout(r, 200));
-        }
-        return false;
-    })();
-
-    return Promise.race([pollPromise]);
+    while (Date.now() - startTime < maxWaitMs) {
+        if (window.ethereum) return true;
+        await new Promise(r => setTimeout(r, 100));
+    }
+    return !!window.ethereum;
 }
 // ============================================================================
 // WALLET STATE SETTERS
@@ -440,32 +426,16 @@ export async function connectWallet(resumeFromStep = null) {
     // Set connection lock
     isConnecting = true;
 
-    // Wait for wallet extension to be fully ready (handles fresh Chrome instances)
-    console.log('Waiting for wallet to be ready...');
+    // Wait briefly for window.ethereum to be injected (handles fresh page
+    // loads where the wallet extension/app hasn't finished injecting yet).
+    console.log('Waiting for wallet to be injected...');
     const isReady = await waitForWalletReady(2000);
 
     if (!isReady) {
-        // Track reload attempts to prevent infinite loops
-        const reloadCount = parseInt(sessionStorage.getItem('walletReloadCount') || '0');
-
-        if (reloadCount < 2) {
-            console.log(`Wallet not ready after 3 seconds, reloading page (attempt ${reloadCount + 1}/2)...`);
-            sessionStorage.setItem('walletReloadCount', String(reloadCount + 1));
-            isConnecting = false;
-            window.location.reload();
-            return null;
-        } else {
-            console.log('Wallet not ready after multiple reloads');
-            sessionStorage.removeItem('walletReloadCount');
-            isConnecting = false;
-            showButtonToast('error', 'Wallet Not Detected', 'Please install a Web3 wallet or refresh manually.');
-            return null;
-        }
+        isConnecting = false;
+        showButtonToast('error', 'Wallet Not Detected', 'Please install a Web3 wallet or refresh manually.');
+        return null;
     }
-
-    // Clear reload counter on success
-    sessionStorage.removeItem('walletReloadCount');
-
 
     console.log('Wallet is ready, checking for accounts...');
 
