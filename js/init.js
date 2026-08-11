@@ -15,7 +15,7 @@ import { initializeChart, fetchPriceData, pricesLoaded } from './charts.js';
 import { checkWalletConnection, setupWalletListeners, connectWallet, disconnectWallet, suppressWalletEvents } from './wallet.js';
 import {
     switchTab, switchTab2, switchTabForStats, switchMinerTab, showStatsPageDirect, updateLoadingStatus, showLoadingScreen, hideLoadingScreen,
-    initNotificationWidget, updateTokenIcon, updateTokenSelection, updatePositionDropdown,
+    initNotificationWidget, updateTokenIcon, updateTokenIconETH, updateTokenSelection, updatePositionDropdown,
     displayWalletBalances, updatePositionInfoMAIN_UNSTAKING, initTokenIconListeners, initRichListEventListeners,
     showButtonToast, setButtonToastAnchor
 } from './ui.js';
@@ -134,10 +134,6 @@ export async function initializeDApp() {
         if (!pricesLoaded || !isLatestSearchComplete()) {
             console.log('Continuing to load data in background...');
         }
-
-        // Start the countdown timer for periodic data refresh
-        startCountdown();
-        console.log('✓ Countdown timer started');
 
     } catch (error) {
         console.error('❌ DApp initialization error:', error);
@@ -909,6 +905,11 @@ export function setupDOMListeners() {
     updateTokenIcon('fromToken22', 'fromTokenIcon22');
     updateTokenSelection('tokenB', 'tokenBIcon');
     updateTokenSelection('tokenA', 'tokenAIcon');
+    // Convert page icons default to the wrong token in the raw HTML
+    // (mismatched from the <select>'s actual default value) — sync them to
+    // the real selection on load, same as the other pages above.
+    updateTokenIconETH('fromToken', 'fromTokenIcon');
+    updateTokenIconETH('toToken', 'toTokenIcon');
 
     // Swap tokens convert
     if (typeof window.swapTokensConvert === 'function') {
@@ -930,13 +931,32 @@ export function setupDOMListeners() {
 document.addEventListener('DOMContentLoaded', async function () {
     console.log('DOM Content Loaded - Starting initialization...');
 
-    // Set up event listeners (Connect Wallet, swap, etc.) FIRST, before the
-    // async initializeDApp() chain below — this only registers listeners,
-    // it doesn't need anything initializeDApp() loads. If any awaited step
-    // in initializeDApp() hangs or fails, buttons (especially Connect
-    // Wallet) must still be clickable rather than sitting dead until that
-    // whole chain resolves.
+    // Set up event listeners (Connect Wallet, swap, etc.), DOM listeners
+    // (icon sync, sliders), token icon listeners, and the countdown timer
+    // FIRST, before the async initializeDApp() chain below. None of these
+    // need anything initializeDApp() loads — they're pure DOM/UI setup —
+    // and initializeDApp() includes several sequential network calls (chart
+    // data, a remote Farcaster SDK import with no timeout, etc.) that can
+    // take a while, especially on mobile. Gating UI setup behind that whole
+    // chain is why the countdown used to visibly start late, and why token
+    // icons could sit unsynced for several seconds after page load.
+    //
+    // setupDOMListeners() itself is NOT called here (only later, at its
+    // original spot below) — it has ~20 addEventListener calls with no
+    // dedup guard, and its position-selector population intentionally needs
+    // to re-run once wallet/position data has loaded. Calling it twice would
+    // double-register those listeners. The icon syncing below duplicates
+    // just its icon-sync lines, which are plain function calls (idempotent,
+    // safe to run twice) rather than listener registrations.
     setupEventListeners();
+    updateTokenIcon('toToken22', 'toTokenIcon11');
+    updateTokenIcon('fromToken22', 'fromTokenIcon22');
+    updateTokenSelection('tokenB', 'tokenBIcon');
+    updateTokenSelection('tokenA', 'tokenAIcon');
+    updateTokenIconETH('fromToken', 'fromTokenIcon');
+    updateTokenIconETH('toToken', 'toTokenIcon');
+    initTokenIconListeners();
+    startCountdown();
 
     // Initialize the DApp
     await initializeDApp();
@@ -959,11 +979,13 @@ document.addEventListener('DOMContentLoaded', async function () {
     // Render contracts display
     renderContracts();
 
-    // Setup DOM listeners (positions, inputs, sliders)
+    // Setup DOM listeners (positions, inputs, sliders) — re-run now that
+    // wallet/position data has had a chance to load (its position-selector
+    // population depends on that). initTokenIconListeners() is NOT called
+    // again here — it was already registered in the early setup above and
+    // has no data dependency, so calling it again would double-register
+    // those change listeners.
     setupDOMListeners();
-
-    // Initialize token icon listeners for swap/convert/create pages
-    initTokenIconListeners();
 
     // Initialize rich list event listeners (sorting, paging, search)
     initRichListEventListeners();
