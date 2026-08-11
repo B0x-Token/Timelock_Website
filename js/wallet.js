@@ -193,7 +193,7 @@ export async function checkWalletConnection() {
     // point, especially in mobile in-app browsers. Poll briefly rather than
     // doing a single one-shot check that can miss it entirely.
     const pollStart = Date.now();
-    while (typeof window.ethereum === 'undefined' && Date.now() - pollStart < 2000) {
+    while (typeof window.ethereum === 'undefined' && Date.now() - pollStart < 10000) {
         await new Promise(r => setTimeout(r, 100));
     }
 
