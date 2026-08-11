@@ -16,7 +16,8 @@ import { checkWalletConnection, setupWalletListeners, connectWallet, disconnectW
 import {
     switchTab, switchTab2, switchTabForStats, switchMinerTab, showStatsPageDirect, updateLoadingStatus, showLoadingScreen, hideLoadingScreen,
     initNotificationWidget, updateTokenIcon, updateTokenSelection, updatePositionDropdown,
-    displayWalletBalances, updatePositionInfoMAIN_UNSTAKING, initTokenIconListeners, initRichListEventListeners
+    displayWalletBalances, updatePositionInfoMAIN_UNSTAKING, initTokenIconListeners, initRichListEventListeners,
+    showButtonToast, setButtonToastAnchor
 } from './ui.js';
 import { initMiningCalcEventListeners } from './mining-calc.js';
 import * as Settings from './settings.js';
@@ -158,6 +159,13 @@ export function setupEventListeners() {
     const connectBtn = document.getElementById('connectBtn');
     if (connectBtn) {
         connectBtn.addEventListener('click', async () => {
+            // TEMPORARY DIAGNOSTIC — confirms the click itself is reaching
+            // our JS before connectWallet() (and any ethers/wallet code) runs
+            // at all. Remove once the mobile connect issue is resolved.
+            console.log('[diag] Connect Wallet button clicked');
+            setButtonToastAnchor('connectBtn');
+            showButtonToast('info', 'Click Registered', 'Button click reached the app JS. Starting connectWallet()...');
+
             await connectWallet();
         });
     }
@@ -922,11 +930,16 @@ export function setupDOMListeners() {
 document.addEventListener('DOMContentLoaded', async function () {
     console.log('DOM Content Loaded - Starting initialization...');
 
+    // Set up event listeners (Connect Wallet, swap, etc.) FIRST, before the
+    // async initializeDApp() chain below — this only registers listeners,
+    // it doesn't need anything initializeDApp() loads. If any awaited step
+    // in initializeDApp() hangs or fails, buttons (especially Connect
+    // Wallet) must still be clickable rather than sitting dead until that
+    // whole chain resolves.
+    setupEventListeners();
+
     // Initialize the DApp
     await initializeDApp();
-
-    // Setup all event listeners
-    setupEventListeners();
 
     // Setup wallet listeners
     await setupWalletListeners();

@@ -949,10 +949,10 @@ export async function switchTab(tabName) {
         if (window.walletConnected && window.userAddress) {
             // Check if ETH balances not already loaded
             if (!window.walletBalancesETH || !window.walletBalancesETH['0xBTC']) {
+                // No chain switch needed — fetchBalancesETH reads via its own
+                // independent RPC provider (customRPC_ETH), not the wallet's
+                // active chain.
                 console.log('Loading ETH balances for convert tab...');
-                if (typeof window.switchToEthereum === 'function') {
-                    await window.switchToEthereum();
-                }
                 if (typeof window.fetchBalancesETH === 'function') {
                     try {
                         await window.fetchBalancesETH(
