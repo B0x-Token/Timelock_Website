@@ -18,7 +18,7 @@ import {
     tokenIconsBase,
     hookAddress
 } from './config.js';
-import { showSuccessNotification, showErrorNotification, showInfoNotification, hideLoadingWidget, showLoadingWidget, updateLoadingStatusWidget, setLoadingProgress } from './ui.js';
+import { showSuccessNotification, showErrorNotification, showInfoNotification, hideLoadingWidget, showLoadingWidget, updateLoadingStatusWidget, setLoadingProgress, showAlertDialog } from './ui.js';
 import { POSITION_FINDER_ABI } from './abis.js';
 import { getSqrtRatioAtTick, approveTokensViaPermit2, toBigNumber } from './contracts.js';
 import { getSymbolFromAddress, tokenAddressesDecimals, fetchBalances } from './utils.js';
@@ -1351,7 +1351,7 @@ export async function increaseLiquidity() {
         showSuccessNotification('Increase Liquidity Complete!', 'Transaction confirmed on blockchain', tx.hash);
 
         enableButton('increaseLiquidityBtn', 'Increase Liquidity');
-        alert("Successfully increased liquidity of position");
+        await showAlertDialog("Successfully increased liquidity of position");
 
         await new Promise(resolve => setTimeout(resolve, 1000));
         fetchBalances();
@@ -1569,7 +1569,7 @@ export async function decreaseLiquidity() {
             [actions, params]
         );
 
-        alert("Decreasing Liquidity now! Approve Transaction!");
+        await showAlertDialog("Decreasing Liquidity now! Approve Transaction!");
         showInfoNotification('Confirm Decrease Liquidity', 'Confirm the decrease in liquidity transaction in your wallet');
 
         const tx = await positionManagerContract.modifyLiquidities(callData, deadline, { gasLimit: 10000000 });
@@ -1583,7 +1583,7 @@ export async function decreaseLiquidity() {
         showSuccessNotification('Decrease Liquidity Complete!', 'Transaction confirmed on blockchain', tx.hash);
 
         console.log("Transaction confirmed in block:", receipt.blockNumber);
-        alert("Successfully decreased liquidity of your Uniswap position");
+        await showAlertDialog("Successfully decreased liquidity of your Uniswap position");
 
         await new Promise(resolve => setTimeout(resolve, 1000));
         fetchBalances();

@@ -11,7 +11,7 @@ import {
 } from './config.js';
 import {totalStakedAmounts, resetTotalStakedAmounts} from './positions.js';
 import {updateStakingValues} from './staking.js';
-import { showErrorNotification } from './ui.js';
+import { showErrorNotification, showButtonToast, setButtonToastAnchor, clearButtonToastAnchor } from './ui.js';
 import {maybeRestoreDefaultAddressesfromContract} from './settings.js';
 // ============================================================================
 // WALLET STATE MANAGEMENT
@@ -265,6 +265,9 @@ export async function checkWalletConnection() {
 export async function quickconnectWallet() {
     console.log("Quick Connect Wallet");
 
+    setButtonToastAnchor('connectBtn');
+    try {
+
     // Reset disconnecting flag when user initiates new connection
     isDisconnecting = false;
     window.isPageVisible = true;
@@ -281,7 +284,7 @@ export async function quickconnectWallet() {
     }
 
     if (typeof window.ethereum === 'undefined') {
-        alert('Please install MetaMask or Rabby wallet!');
+        showButtonToast('error', 'Wallet Not Found', 'Please install MetaMask or Rabby wallet!');
         return null;
     }
 
@@ -335,6 +338,7 @@ export async function quickconnectWallet() {
 
         return null;
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 /**
@@ -369,6 +373,9 @@ async function withNetworkRetry(fn, maxRetries = 3, stepName = '') {
  */
 export async function connectWallet(resumeFromStep = null) {
     console.log("Connect Wallet", resumeFromStep ? `(resuming from: ${resumeFromStep})` : '');
+
+    setButtonToastAnchor('connectBtn');
+    try {
 
     // Reset disconnecting flag when user initiates new connection
     isDisconnecting = false;
@@ -415,7 +422,7 @@ export async function connectWallet(resumeFromStep = null) {
             console.log('Wallet not ready after multiple reloads');
             sessionStorage.removeItem('walletReloadCount');
             isConnecting = false;
-            alert('Wallet not detected. Please install a Web3 wallet or refresh manually.');
+            showButtonToast('error', 'Wallet Not Detected', 'Please install a Web3 wallet or refresh manually.');
             return null;
         }
     }
@@ -642,7 +649,7 @@ export async function connectWallet(resumeFromStep = null) {
         // Handle timeout specifically - wallet extension may still be loading
         if (error.message && error.message.includes('timed out')) {
             console.log('Wallet request timed out - extension may still be initializing');
-            alert('Wallet is still loading. Please wait a moment and click Connect Wallet again.');
+            showButtonToast('error', 'Wallet Loading', 'Wallet is still loading. Please wait a moment and click Connect Wallet again.');
             return null;
         }
 
@@ -651,6 +658,7 @@ export async function connectWallet(resumeFromStep = null) {
 
         return null;
     }
+    } finally { clearButtonToastAnchor(); }
 }
 
 // ============================================================================
@@ -854,15 +862,15 @@ export function handleWalletError(error) {
 
     switch (error.code) {
         case 4001:
-            alert('Please approve the connection request in your wallet');
+            showButtonToast('error', 'Connection Rejected', 'Please approve the connection request in your wallet');
             attemptf2f21 = 0;
             break;
         case -32002:
-            alert('Connection request is already pending. Please check your wallet');
+            showButtonToast('error', 'Request Pending', 'Connection request is already pending. Please check your wallet');
             attemptf2f21 = 0;
             break;
         default:
-            alert('Failed to connect wallet: ' + error.message);
+            showButtonToast('error', 'Connection Failed', 'Failed to connect wallet: ' + error.message);
             attemptf2f21 = 0;
     }
 }

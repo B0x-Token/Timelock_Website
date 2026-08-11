@@ -58,7 +58,7 @@
             <span class="ipfs-icon">&#x1F512;</span>
             <span class="ipfs-text">
                 <strong>IPFS Verified</strong> — Content-addressed & immutable. Code cannot change.
-                <a href="#" id="ipfs-bookmark" onclick="var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent); if(isMobile) { alert('Tap the Share button (iOS) or Menu ⋮ (Android), then select Add to Home Screen or Bookmark'); } else { alert('Press Ctrl+D (Cmd+D on Mac) to bookmark this page'); } return false;">Bookmark it!</a>
+                <a href="#" id="ipfs-bookmark" onclick="var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent); if(isMobile) { showAlertDialog('Tap the Share button (iOS) or Menu ⋮ (Android), then select Add to Home Screen or Bookmark'); } else { showAlertDialog('Press Ctrl+D (Cmd+D on Mac) to bookmark this page'); } return false;">Bookmark it!</a>
             </span>
             <span class="ipfs-cid" id="ipfs-cid" title="Click to copy IPFS URL"></span>
             <button class="ipfs-close" onclick="document.getElementById('ipfs-banner').style.display='none'; document.body.classList.remove('ipfs-active')" aria-label="Close banner">&times;</button>
@@ -158,6 +158,8 @@
             <div class="loading-widget-progress-bar" id="loading-progress-bar"></div>
         </div>
     </div>
+
+    <div id="toast" class="toast"></div>
 
 
 
@@ -794,7 +796,10 @@
                         <p>Deploy a personal vault that holds your NFTs until the unlock time. You can stake NFTs through the vault and earn rewards throughout the lock period.</p>
                         <div class="form-group">
                             <label>Unlock Date &amp; Time</label>
-                            <input type="datetime-local" id="timelock-unlock-datetime" oninput="Timelock.updateUnlockTimestamp()" style="width:100%;padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
+                            <div class="timelock-datetime-row">
+                                <input type="date" id="timelock-unlock-date" oninput="Timelock.updateUnlockTimestamp()" style="padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
+                                <input type="time" id="timelock-unlock-time" oninput="Timelock.updateUnlockTimestamp()" style="padding:8px;background:#1e1e2e;color:#fff;border:1px solid #444;border-radius:6px;">
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Calculated Unix Timestamp</label>
@@ -1111,8 +1116,6 @@
                         <h1>Contract Addresses</h1>
                         <div id="contracts-container"></div>
                     </div>
-
-                    <div id="toast" class="toast"></div>
                 </div>
 
                 <!--B0x <-> 0xBTC Converter-->

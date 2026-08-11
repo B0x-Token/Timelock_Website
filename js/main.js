@@ -195,6 +195,7 @@ window.showWarningNotification = UI.showWarningNotification;
 window.showInfoNotification = UI.showInfoNotification;
 window.showToast = UI.showToast;
 window.showAlert = UI.showAlert;
+window.showAlertDialog = UI.showAlertDialog;
 
 // Loading widgets
 window.showLoadingWidget = UI.showLoadingWidget;

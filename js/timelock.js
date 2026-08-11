@@ -32,7 +32,8 @@ import {
     showInfoNotification,
     showButtonToast,
     setButtonToastAnchor,
-    clearButtonToastAnchor
+    clearButtonToastAnchor,
+    showConfirmDialog
 } from './ui.js';
 
 import { positionData, stakingPositionData } from './positions.js';
@@ -1676,7 +1677,7 @@ export async function stakeB0xGuessToVault() {
 
     const isMasquerading = masqueradeAddress &&
         (!window.userAddress || masqueradeAddress.toLowerCase() !== window.userAddress.toLowerCase());
-    const confirmed = window.confirm(
+    const confirmed = await showConfirmDialog(
         `You are about to stake ${amountStr} B0x from your wallet into this vault's B0x Guess position.\n\n` +
         `Vault: ${selectedVaultAddress}\n\n` +
         (isMasquerading
@@ -1869,7 +1870,7 @@ export async function getRewardsAndStakeAllVaultB0xGuess() {
 
         const vaultOwner = masqueradeAddress || window.userAddress || 'Unknown';
 
-        const confirmed = window.confirm(
+        const confirmed = await showConfirmDialog(
             `You will make the Vault deposit ${vaultBalDisplay} B0x Tokens from its balance and ${rewardOwedDisplay} B0x Tokens from its LP Staking rewards, ` +
             `for a total of ${totalDisplay} B0x Tokens going into B0x Guess on behalf of the Vault, which is owned by ${vaultOwner}.\n\n` +
             `Vault: ${selectedVaultAddress}\n\n` +
@@ -1924,7 +1925,7 @@ export async function withdrawB0xGuessFromVault() {
         const balBefore = await withRpcRetry(() => vaultRead.BalOfB0xGuess(selectedVaultAddress), 'BalOfB0xGuess');
         const penaltyNow = await withRpcRetry(() => vaultRead.B0xGuessPenalty(), 'B0xGuessPenalty');
         if (balBefore.gt(0) && penaltyNow.gt(0)) {
-            const proceed = window.confirm(
+            const proceed = await showConfirmDialog(
                 `⚠️ There is currently an outstanding B0x Guess penalty of ${ethers.utils.formatUnits(penaltyNow, 18)} B0x.\n\n` +
                 `This vault's own withdrawB0xGuess() only tolerates zero penalty, so B0x Guess will silently do nothing (the transaction will still succeed on-chain, but no B0x will move).\n\n` +
                 `Only the vault owner can override this via the Advanced Options below. Send this no-op transaction anyway?`
@@ -1989,7 +1990,7 @@ export async function withdrawB0xGuessOwnerFromVault() {
 
     const maxPenalty = ethers.utils.parseUnits(maxPenaltyStr, 18);
     const penaltyNow = lastB0xGuessPenalty;
-    const confirmed = window.confirm(
+    const confirmed = await showConfirmDialog(
         `⚠️ Owner Force-Withdraw\n\n` +
         `This withdraws the vault's entire B0x Guess position, tolerating up to ${maxPenaltyStr} B0x of penalty.\n\n` +
         (penaltyNow.gt(maxPenalty)
@@ -2341,13 +2342,14 @@ export async function createVault() {
             return;
         }
 
-        const dtInput = document.getElementById('timelock-unlock-datetime');
-        if (!dtInput || !dtInput.value) {
+        const dateInput = document.getElementById('timelock-unlock-date');
+        const timeInput = document.getElementById('timelock-unlock-time');
+        if (!dateInput || !timeInput || !dateInput.value || !timeInput.value) {
             showButtonToast('error', 'Missing Date', 'Please select an unlock date and time.');
             return;
         }
 
-        const unlockTimestamp = Math.floor(new Date(dtInput.value).getTime() / 1000);
+        const unlockTimestamp = Math.floor(new Date(`${dateInput.value}T${timeInput.value}`).getTime() / 1000);
         const nowTs = Math.floor(Date.now() / 1000);
 
         if (unlockTimestamp <= nowTs) {
@@ -2419,7 +2421,7 @@ export async function stakeNFTToVault() {
 
     if (masqueradeAddress) {
         const short = `${masqueradeAddress.slice(0, 10)}...${masqueradeAddress.slice(-8)}`;
-        const confirmed = window.confirm(
+        const confirmed = await showConfirmDialog(
             `⚠️ Masquerade Mode Active\n\n` +
             `You are currently viewing vaults belonging to:\n${short}\n\n` +
             `Staking an NFT will deposit YOUR NFT into THEIR vault. The NFT and all its contents will be locked under that address until their timelock expires — you will not be able to retrieve it unless you also control that wallet.\n\n` +
@@ -2442,7 +2444,7 @@ export async function stakeNFTToVault() {
         const unlockSentence = !vaultInfo || vaultInfo.secondsLeft <= 0
             ? 'It is already unlocked to the owner of the contract.'
             : `It will unlock in ${daysUntilUnlock} day${daysUntilUnlock !== 1 ? 's' : ''} from now to the owner of the contract.`;
-        const stakeConfirmed = window.confirm(
+        const stakeConfirmed = await showConfirmDialog(
             `You are staking Uniswap V4 Liquidity Pool NFT #${tokenId} into a Timelock Contract.\n\n` +
             `This Timelock Contract is owned by ${vaultOwner || 'Unknown'} ${isYou ? '(You)' : '(Not You)'}.\n\n` +
             unlockSentence
@@ -2459,7 +2461,7 @@ export async function stakeNFTToVault() {
             : daysLeft > 0
                 ? `approximately ${daysLeft} day${daysLeft !== 1 ? 's' : ''} and ${hrsLeft} hour${hrsLeft !== 1 ? 's' : ''}`
                 : `approximately ${hrsLeft} hour${hrsLeft !== 1 ? 's' : ''}`;
-        const confirmed = window.confirm(
+        const confirmed = await showConfirmDialog(
             `⚠️ Short Timelock Warning — Staking Fees May Apply\n\n` +
             `This vault is ${timeStr} (less than 30 days).\n\n` +
             `When you deposit this NFT it will be staked into the LP staking contract. The staking contract charges early withdrawal fees that decrease the longer your position is staked.\n\n` +
@@ -3436,7 +3438,7 @@ export async function superDestroyEligibleVaults() {
         }
 
         const listText = addrList.map(a => `${a.slice(0, 8)}...${a.slice(-6)}`).join('\n');
-        const confirmed = window.confirm(
+        const confirmed = await showConfirmDialog(
             `⚠️ WARNING — Removing ${addrList.length === 1 ? 'This Vault' : 'These Vaults'} From This Site Forever\n\n` +
             `${addrList.length === 1 ? 'This vault' : 'These vault contracts'} will be destroyed and will NEVER be shown on this site again:\n\n${listText}\n\n` +
             `Each is unlocked with 0.0 B0x staked and 0 loose B0x, so nothing should be lost. The vault contract itself keeps existing on-chain and you keep full owner access to it — but only by interacting with it directly (e.g. via BaseScan's Read/Write Contract tabs). This site will never help you find or use it again after this.\n\n` +
@@ -3510,7 +3512,7 @@ export async function transferVaultOwnership() {
     }
 
     const feeDisplay = ethers.utils.formatUnits(requiredFeeAmount, 18);
-    const confirmed = window.confirm(
+    const confirmed = await showConfirmDialog(
         `⚠️ WARNING — Permanent Transfer\n\n` +
         `This vault and ALL of its contents (NFTs, tokens, staking positions) will be permanently transferred to:\n\n` +
         `${newOwner}\n\n` +
@@ -3571,7 +3573,7 @@ export async function transferGuessDepoCaller() {
         return;
     }
 
-    const confirmed = window.confirm(
+    const confirmed = await showConfirmDialog(
         `You are about to delegate this vault's B0x Guess staking power to:\n\n` +
         `${newGuessDepoCaller}\n\n` +
         `That address will be able to call stakeVaultB0xGuess / stakeVaultMaxAndRewards on this vault's behalf, ` +
@@ -3710,7 +3712,7 @@ export async function depositTokenToVault() {
         vaultOwner.toLowerCase() === window.userAddress.toLowerCase();
     const ownerLabel = isYou ? '(You)' : '(NOT You)';
 
-    const confirmed = window.confirm(
+    const confirmed = await showConfirmDialog(
         `You are about to deposit ${amountStr} ${symbol} into a Timelock Contract.\n\n` +
         `Token: ${symbol} (${tokenAddr})\n` +
         `Vault: ${selectedVaultAddress}\n` +
@@ -4033,16 +4035,17 @@ export async function setMaxDepositAmount() {
  * Updates the displayed unix timestamp from the datetime-local input.
  */
 export function updateUnlockTimestamp() {
-    const dtInput = document.getElementById('timelock-unlock-datetime');
+    const dateInput = document.getElementById('timelock-unlock-date');
+    const timeInput = document.getElementById('timelock-unlock-time');
     const tsEl = document.getElementById('timelock-unlock-ts');
     const distEl = document.getElementById('timelock-unlock-distance');
-    if (!dtInput || !tsEl) return;
-    if (!dtInput.value) {
+    if (!dateInput || !timeInput || !tsEl) return;
+    if (!dateInput.value || !timeInput.value) {
         tsEl.value = '';
         if (distEl) distEl.textContent = '';
         return;
     }
-    const ts = Math.floor(new Date(dtInput.value).getTime() / 1000);
+    const ts = Math.floor(new Date(`${dateInput.value}T${timeInput.value}`).getTime() / 1000);
     const nowTs = Math.floor(Date.now() / 1000);
     tsEl.value = `${ts}`;
 

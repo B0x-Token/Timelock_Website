@@ -230,7 +230,8 @@ export function showButtonToast(type = 'info', title = '', message = '', duratio
     toast.style.cssText = [
         'position:fixed',
         'z-index:99999',
-        'max-width:340px',
+        'box-sizing:border-box',
+        'max-width:min(340px, calc(100vw - 24px))',
         'min-width:180px',
         `background:#1a1a2e`,
         `border:1px solid ${color}`,
@@ -245,11 +246,13 @@ export function showButtonToast(type = 'info', title = '', message = '', duratio
         'opacity:0',
         'transform:translateY(-8px)',
         'transition:opacity 0.18s ease,transform 0.18s ease',
+        'overflow-wrap:anywhere',
+        'word-break:break-word',
     ].join(';');
 
     toast.innerHTML =
-        `<div style="font-weight:700;color:${color};margin-bottom:${message ? '4px' : '0'}">${icon} ${title}</div>` +
-        (message ? `<div style="color:#ccc">${message}</div>` : '');
+        `<div style="font-weight:700;color:${color};margin-bottom:${message ? '4px' : '0'};overflow-wrap:anywhere;word-break:break-word">${icon} ${title}</div>` +
+        (message ? `<div style="color:#ccc;overflow-wrap:anywhere;word-break:break-word">${message}</div>` : '');
 
     document.body.appendChild(toast);
     _anchoredToastEl = toast;
@@ -295,6 +298,170 @@ export function showButtonToast(type = 'info', title = '', message = '', duratio
         toast.style.transform = 'translateY(-8px)';
         setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 220);
     }, duration);
+}
+
+// =============================================================================
+// CONFIRMATION ALERT DIALOG (mobile-safe replacement for window.alert/confirm)
+// =============================================================================
+
+let _alertDialogQueue = Promise.resolve();
+
+const _dialogBtnStyle = (primary) => [
+    primary
+        ? 'background:linear-gradient(135deg,#7877c6 0%,#5a4fcf 100%)'
+        : 'background:rgba(255,255,255,0.08)',
+    primary ? 'border:none' : 'border:1px solid rgba(255,255,255,0.15)',
+    'color:#fff', 'border-radius:8px', 'padding:9px 18px',
+    'font-weight:600', 'cursor:pointer', 'flex:1', 'font-size:0.9em',
+].join(';');
+
+/**
+ * Builds the shared overlay + message box used by both showAlertDialog and
+ * showConfirmDialog. Caller appends its own button(s) to the returned box.
+ */
+function _createDialogShell(title, message) {
+    // Full-screen, mostly-transparent click-blocker so the page behind
+    // can't be interacted with while the dialog is unacknowledged.
+    const overlay = document.createElement('div');
+    overlay.style.cssText = [
+        'position:fixed', 'inset:0', 'z-index:100000',
+        'background:rgba(0,0,0,0.35)',
+        'opacity:0', 'transition:opacity 0.15s ease',
+    ].join(';');
+
+    const box = document.createElement('div');
+    box.style.cssText = [
+        'position:fixed', 'z-index:100001', 'box-sizing:border-box',
+        'max-width:340px', 'min-width:220px', 'width:calc(100% - 24px)',
+        'background:#1a1a2e', 'border:1px solid rgba(255,255,255,0.12)',
+        'border-radius:12px', 'padding:16px 18px', 'color:#fff',
+        'box-shadow:0 12px 40px rgba(0,0,0,0.6)',
+        'opacity:0', 'transform:translateY(-8px)',
+        'transition:opacity 0.15s ease,transform 0.15s ease',
+    ].join(';');
+
+    const titleEl = document.createElement('div');
+    titleEl.style.cssText = 'font-weight:700;font-size:1.02em;margin-bottom:8px;color:#7877c6;overflow-wrap:anywhere;word-break:break-word';
+    titleEl.textContent = title;
+
+    const msgEl = document.createElement('div');
+    msgEl.style.cssText = 'color:#ddd;line-height:1.5;white-space:pre-line;margin-bottom:14px;font-size:0.92em;overflow-wrap:anywhere;word-break:break-word';
+    msgEl.textContent = message;
+
+    box.appendChild(titleEl);
+    box.appendChild(msgEl);
+
+    return { overlay, box };
+}
+
+/**
+ * Appends the dialog to the DOM and positions it next to the same anchor
+ * button/element showButtonToast uses (pinned via setButtonToastAnchor, or
+ * the last clicked button), instead of centering on the full viewport.
+ */
+function _showDialog(overlay, box) {
+    document.body.appendChild(overlay);
+    document.body.appendChild(box);
+
+    const anchorEl = _actionAnchorBtn || _lastClickedBtn;
+    const tw = 340;
+    const th = 130; // conservative height estimate
+    const scrollX = window.scrollX || 0;
+    const scrollY = window.scrollY || 0;
+
+    if (anchorEl) {
+        const r = anchorEl.getBoundingClientRect();
+        let left = r.left;
+        if (left + tw > window.innerWidth - 12) left = window.innerWidth - tw - 12;
+        if (left < 8) left = 8;
+
+        const top = r.top > th + 12 ? r.top - th - 8 : r.bottom + 8;
+
+        box.style.left = `${Math.round(left + scrollX)}px`;
+        box.style.top = `${Math.round(top + scrollY)}px`;
+    } else {
+        box.style.top = `${Math.round(20 + scrollY)}px`;
+        box.style.right = '20px';
+    }
+
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        overlay.style.opacity = '1';
+        box.style.opacity = '1';
+        box.style.transform = 'translateY(0)';
+    }));
+}
+
+function _closeDialog(overlay, box, resolve, result) {
+    overlay.style.opacity = '0';
+    box.style.opacity = '0';
+    setTimeout(() => {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        if (box.parentNode) box.parentNode.removeChild(box);
+    }, 150);
+    resolve(result);
+}
+
+/**
+ * Shows a modal dialog and resolves once the user explicitly acknowledges it
+ * by clicking the button. Drop-in replacement for alert() in contexts where
+ * blocking native alerts don't work (e.g. MetaMask mobile's in-app browser).
+ * Multiple calls are queued so dialogs are shown one at a time.
+ * @param {string} message
+ * @param {string} title
+ * @returns {Promise<void>}
+ */
+export function showAlertDialog(message, title = 'Notice') {
+    _alertDialogQueue = _alertDialogQueue.then(() => new Promise((resolve) => {
+        const { overlay, box } = _createDialogShell(title, message);
+
+        const btn = document.createElement('button');
+        btn.textContent = 'OK, Got It';
+        btn.style.cssText = _dialogBtnStyle(true) + ';width:100%';
+        box.appendChild(btn);
+
+        _showDialog(overlay, box);
+
+        btn.addEventListener('click', () => _closeDialog(overlay, box, resolve));
+        btn.focus();
+    }));
+    return _alertDialogQueue;
+}
+
+/**
+ * Shows a Cancel/Confirm dialog anchored near the triggering button/element,
+ * resolving true if confirmed, false if cancelled. Drop-in replacement for
+ * window.confirm() in contexts where blocking native dialogs don't work
+ * (e.g. MetaMask mobile's in-app browser).
+ * @param {string} message
+ * @param {string} title
+ * @returns {Promise<boolean>}
+ */
+export function showConfirmDialog(message, title = 'Please Confirm') {
+    _alertDialogQueue = _alertDialogQueue.then(() => new Promise((resolve) => {
+        const { overlay, box } = _createDialogShell(title, message);
+
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:8px';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = _dialogBtnStyle(false);
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Confirm';
+        confirmBtn.style.cssText = _dialogBtnStyle(true);
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(confirmBtn);
+        box.appendChild(btnRow);
+
+        _showDialog(overlay, box);
+
+        cancelBtn.addEventListener('click', () => _closeDialog(overlay, box, resolve, false));
+        confirmBtn.addEventListener('click', () => _closeDialog(overlay, box, resolve, true));
+        confirmBtn.focus();
+    }));
+    return _alertDialogQueue;
 }
 
 /**

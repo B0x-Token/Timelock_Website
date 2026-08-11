@@ -7228,3 +7228,19 @@ body.ipfs-active {
     opacity: 0.35;
     cursor: not-allowed;
 }
+
+.timelock-datetime-row {
+    display: flex;
+    gap: 8px;
+}
+
+.timelock-datetime-row input {
+    flex: 1;
+    min-width: 0;
+}
+
+@media (max-width: 440px) {
+    .timelock-datetime-row {
+        flex-direction: column;
+    }
+}

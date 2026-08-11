@@ -39,7 +39,8 @@ import {
     showInfoNotification,
     showSuccessNotificationCentered,
     showErrorNotificationCentered,
-    showInfoNotificationCentered
+    showInfoNotificationCentered,
+    showAlertDialog
 } from './ui.js';
 import {
     getTokenNameFromAddress,
@@ -468,7 +469,7 @@ export async function collectRewards() {
         console.log("Rewards claimed successfully!");
 
         showSuccessNotificationTop('Rewards Claimed!', 'Your staking rewards have been successfully claimed.', rewardTx.hash);
-        alert("Claimed Rewards SUCCESSFULLY!");
+        await showAlertDialog("Claimed Rewards SUCCESSFULLY!");
 
         // Invalidate cache and cooldown to force fresh data fetch
         window.rewardStatsCache.timestamp = 0;
@@ -527,7 +528,7 @@ export async function depositNFTStake() {
     }
 
     disableButtonWithSpinner('depositNFTStakeBtn');
-    alert('You are now depositing a Uniswap v4 NFT Position to stake. Withdrawal penalty is 20% to instant withdraw down to 3% after 15 days. 1% after 45 days. It is tracked per NFT, so multiple NFTs will have different withdraw Penalties');
+    await showAlertDialog('You are now depositing a Uniswap v4 NFT Position to stake. Withdrawal penalty is 20% to instant withdraw down to 3% after 15 days. 1% after 45 days. It is tracked per NFT, so multiple NFTs will have different withdraw Penalties');
 
     const positionSelect = document.querySelector('#staking-deposit-select');
     const selectedPositionId = positionSelect.value;
@@ -880,10 +881,10 @@ export async function startRewardPeriod() {
     } catch (e) {
         if (e.message && e.message.includes("Reward must be positive")) {
             const symbol = mockRewardTokens.find(token => token.address === inputtedTokenAddress)?.symbol;
-            alert("Token Reward Amount is Zero for token: " + symbol + "   address: " + inputtedTokenAddress + " \nCant start new Reward Period with zero rewards");
+            await showAlertDialog("Token Reward Amount is Zero for token: " + symbol + "   address: " + inputtedTokenAddress + " \nCant start new Reward Period with zero rewards");
         } else {
             console.error("Transaction failed:", e.message || e);
-            alert("Transaction failed: " + (e.message || "Unknown error"));
+            await showAlertDialog("Transaction failed: " + (e.message || "Unknown error"));
         }
     }
 
@@ -1772,7 +1773,7 @@ export async function decreaseLiquidityStaking() {
         console.log("decLiqStaking min amount0: ", amount0remove.toString());
         console.log("decLiqStaking min amount1: ", amount1remove.toString());
 
-        alert("Decreasing Liquidity now! Approve Transaction!");
+        await showAlertDialog("Decreasing Liquidity now! Approve Transaction!");
 
         showInfoNotification('Decreasing Liquidity on Staked ID: ' + positionID, 'Please confirm transaction in the wallet');
 
@@ -1786,7 +1787,7 @@ export async function decreaseLiquidityStaking() {
 
         console.log("Decreased Liquidity transaction confirmed in block:", receipt.blockNumber);
 
-        alert("Successfully decreased liquidity of your Staked Uniswap position");
+        await showAlertDialog("Successfully decreased liquidity of your Staked Uniswap position");
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         if (window.fetchBalances) await window.fetchBalances();
@@ -1965,7 +1966,7 @@ export async function increaseLiquidityStaking() {
             console.warn("Error refreshing data after increase:", refreshError);
         }
 
-        alert("Successfully Increased Liquidity of Staked NFT - Position data has been refreshed");
+        await showAlertDialog("Successfully Increased Liquidity of Staked NFT - Position data has been refreshed");
 
     } catch (error) {
         console.error(`Error increasing liquidity:`, error);
