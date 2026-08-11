@@ -2721,6 +2721,18 @@ body.stats-active .content {
         flex-shrink: 0;
     }
 
+    /* Wider icon box + smaller paired icons for tokens that represent two
+       assets at once (e.g. "B0x" on Ethereum = B0x + RightsTo0xBTC) */
+    .token-icon.token-icon-dual {
+        width: 60px;
+        gap: 3px;
+    }
+
+    .token-icon222-dual {
+        width: 24px;
+        height: 24px;
+    }
+
     .form-group select option {
         color: black !important;
         background-color: white !important;

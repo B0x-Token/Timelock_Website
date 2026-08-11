@@ -17,7 +17,7 @@ import {
     switchTab, switchTab2, switchTabForStats, switchMinerTab, showStatsPageDirect, updateLoadingStatus, showLoadingScreen, hideLoadingScreen,
     initNotificationWidget, updateTokenIcon, updateTokenIconETH, updateTokenSelection, updatePositionDropdown,
     displayWalletBalances, updatePositionInfoMAIN_UNSTAKING, initTokenIconListeners, initRichListEventListeners,
-    showButtonToast, setButtonToastAnchor
+    showButtonToast, setButtonToastAnchor, filterTokenOptionsCreate
 } from './ui.js';
 import { initMiningCalcEventListeners } from './mining-calc.js';
 import * as Settings from './settings.js';
@@ -949,6 +949,11 @@ document.addEventListener('DOMContentLoaded', async function () {
     // just its icon-sync lines, which are plain function calls (idempotent,
     // safe to run twice) rather than listener registrations.
     setupEventListeners();
+    // Token A and Token B on Create Position both natively default to the
+    // same option (0xBTC) in the raw HTML — filter first so Token B gets
+    // auto-switched to the next available option (B0x) before syncing
+    // icons, same order setupDOMListeners() below uses.
+    filterTokenOptionsCreate();
     updateTokenIcon('toToken22', 'toTokenIcon11');
     updateTokenIcon('fromToken22', 'fromTokenIcon22');
     updateTokenSelection('tokenB', 'tokenBIcon');
@@ -956,6 +961,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     updateTokenIconETH('fromToken', 'fromTokenIcon');
     updateTokenIconETH('toToken', 'toTokenIcon');
     initTokenIconListeners();
+    // Pure DOM manipulation (creates the button, wires its click handler) —
+    // the handler only reads wallet/position state later, at click time, not
+    // here. Internally guarded against double-adding to the same input, so
+    // it's safe regardless. Was previously gated behind the full
+    // initializeDApp() chain, which is why Create/Stake Increase — tabs a
+    // user might switch to quickly — could appear to be missing MAX buttons
+    // if that chain hadn't finished yet.
+    initializeMaxButtons();
     startCountdown();
 
     // Initialize the DApp
@@ -992,9 +1005,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Initialize mining calculator event listeners
     initMiningCalcEventListeners();
-
-    // Initialize MAX buttons for all input fields
-    initializeMaxButtons();
 
     // Set responsive padding
     setPadding();

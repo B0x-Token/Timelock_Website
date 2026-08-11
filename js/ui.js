@@ -1444,9 +1444,19 @@ export function updateTokenIconCore(selectId, iconId, options = {}) {
     const iconSource = context === 'swapETH' ? tokenIconsETH : tokenIconsBase;
     const iconURL = iconSource[token];
 
-    if (iconURL) {
+    // On Ethereum, the "B0x" option actually represents two tokens (B0x +
+    // RightsTo0xBTC, per the "B0x Tokens & RightsTo0xBTC Tokens" option
+    // label) — show both icons side by side instead of just B0x's.
+    if (context === 'swapETH' && token === 'B0x' && iconSource['RightsTo0xBTC']) {
+        icon.classList.add('token-icon-dual');
+        icon.innerHTML =
+            `<img src="${iconSource['B0x']}" alt="B0x" class="token-icon222 token-icon222-dual" onerror="this.style.display='none'">` +
+            `<img src="${iconSource['RightsTo0xBTC']}" alt="RightsTo0xBTC" class="token-icon222 token-icon222-dual" onerror="this.style.display='none'">`;
+    } else if (iconURL) {
+        icon.classList.remove('token-icon-dual');
         icon.innerHTML = `<img src="${iconURL}" alt="${token}" class="token-icon222" onerror="this.parentElement.textContent='${token.charAt(0)}'">`;
     } else {
+        icon.classList.remove('token-icon-dual');
         icon.textContent = token.charAt(0);
     }
 
