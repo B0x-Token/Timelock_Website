@@ -186,6 +186,17 @@ function requestWithTimeout(promise, ms = 60000) {
  */
 export async function checkWalletConnection() {
     console.log("Checking wallet connection");
+
+    // Unlike a button click (where the whole page has already had time to
+    // load by the time the user acts), this runs during page load itself —
+    // window.ethereum injection timing isn't guaranteed yet at this exact
+    // point, especially in mobile in-app browsers. Poll briefly rather than
+    // doing a single one-shot check that can miss it entirely.
+    const pollStart = Date.now();
+    while (typeof window.ethereum === 'undefined' && Date.now() - pollStart < 2000) {
+        await new Promise(r => setTimeout(r, 100));
+    }
+
     // Ask the wallet itself, not our own localStorage flag, whether this
     // site is already authorized. eth_accounts is a silent, read-only,
     // popup-free EIP-1193 call — always safe regardless of prior state — so
@@ -199,13 +210,6 @@ export async function checkWalletConnection() {
             console.log('Page hidden, skipping wallet connection check');
             return;
         }
-        // Check if wallet is actually connected before making requests
-        // This prevents triggering wallet popups when user has closed the wallet
-        if (typeof window.ethereum.isConnected === 'function' && !window.ethereum.isConnected()) {
-            console.log('Wallet provider not connected, skipping auto-reconnect');
-            return;
-        }
-
         try {
             // Add timeout to prevent hanging if wallet extension isn't fully loaded
             const timeoutPromise = new Promise((_, reject) =>
