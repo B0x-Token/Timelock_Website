@@ -2380,13 +2380,13 @@ export async function loadDataGuessStaking() {
  * Processes loaded Guess B0x staking data into stats + table
  */
 function processGuessStakingData() {
-    updateStatsGuessStaking();
-
     allGuessStakingData = Object.entries(guessStakingData.users)
         .map(([address, data]) => ({ address, ...data }))
         .filter(user => parseFloat(user.staking_balance) > 0);
 
     filteredGuessStakingData = [...allGuessStakingData];
+
+    updateStatsGuessStaking();
 
     currentPageGuessStaking = 1;
     renderTableGuessStaking();
@@ -2405,7 +2405,7 @@ function updateStatsGuessStaking() {
             : generatedAt.toLocaleString();
     }
 
-    document.getElementById('guessStakeTotalUsers').textContent = formatNumber(guessStakingData.user_count);
+    document.getElementById('guessStakeTotalUsers').textContent = formatNumber(allGuessStakingData.length);
 
     const poolBalance = parseFloat(guessStakingData.pool_balance) / 1e18;
     document.getElementById('guessStakePoolBalance').textContent = poolBalance.toLocaleString(undefined, { maximumFractionDigits: 2 });
