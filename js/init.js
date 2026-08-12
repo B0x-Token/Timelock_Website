@@ -282,6 +282,8 @@ const validTabs = [
     'side-pools',
     'stats-rich-list',
     'rich-list',
+    'stats-guess-staking-rich-list',
+    'guess-staking-rich-list',
     'miner',
     'miner-solo',
     'miner-pool',
@@ -297,7 +299,8 @@ const statsSubTabs = [
     'stats-home',
     'stats-mining-calc',
     'stats-staking-rich-list',
-    'stats-rich-list'
+    'stats-rich-list',
+    'stats-guess-staking-rich-list'
 ];
 
 // Stats sub-tabs that need full stats data (difficulty, hashrate, etc.)
@@ -314,6 +317,9 @@ async function handleTabSwitch(tabName) {
     }
     if (tabName === 'rich-list') {
         tabName = 'stats-rich-list';
+    }
+    if (tabName === 'guess-staking-rich-list') {
+        tabName = 'stats-guess-staking-rich-list';
     }
     if (tabName === 'staking') {
         tabName = 'staking-main-page';
