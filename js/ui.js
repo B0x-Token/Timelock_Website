@@ -1159,6 +1159,8 @@ export async function switchTab2(tabName) {
     // Now load data AFTER the page is visible (so "loading..." text shows)
     if (tabName == 'stats-staking-rich-list') {
         loadData2();
+    } else if (tabName == 'stats-guess-staking-rich-list') {
+        loadDataGuessStaking();
     } else if (tabName == 'stats-rich-list') {
         loadData();
     } else if (tabName == 'rich-list') {
@@ -1197,6 +1199,9 @@ export function updateURL(tabName) {
     }
     if (tabName == "stats-staking-rich-list") {
         tabName = 'staking-rich-list';
+    }
+    if (tabName == "stats-guess-staking-rich-list") {
+        tabName = 'guess-staking-rich-list';
     }
     if (tabName == "stats-rich-list") {
         tabName = 'rich-list';
@@ -2185,6 +2190,13 @@ let filteredData = [];
 let currentPage = 1;
 let pageSize = 25;
 
+// State variables for Guess B0x staking rich list (loadDataGuessStaking)
+let guessStakingData = null;
+let allGuessStakingData = [];
+let filteredGuessStakingData = [];
+let currentPageGuessStaking = 1;
+let pageSizeGuessStaking = 25;
+
 // State variables for B0x rich list (loadData)
 let baseData = [];
 let ethData = [];
@@ -2299,6 +2311,248 @@ function updateStats55() {
 
     document.getElementById('totalB0xStaked').textContent = formatNumber(totalB0xStaked / 1e18);
     document.getElementById('total0xBTCStaked').textContent = formatNumber(total0xBTCStaked / 1e8);
+}
+
+/**
+ * Loads Guess B0x staking rich list data from primary or backup sources
+ * @async
+ */
+export async function loadDataGuessStaking() {
+    const primaryUrl = customDataSource + 'GuessB0xStakerBalances.json';
+    const backupUrl = customBACKUPDataSource + 'GuessB0xStakerBalances.json';
+
+    try {
+        document.getElementById('tableContentGuessStaking').innerHTML = '<div class="loading55">Loading Guess B0x staking data...</div>';
+
+        console.log('Fetching Guess B0x staking data from primary source...');
+        const response = await fetch(primaryUrl);
+        console.log("RESPONSE URL: ", primaryUrl);
+
+        if (!response.ok) {
+            throw new Error(`Primary source failed with status: ${response.status}`);
+        }
+
+        guessStakingData = await response.json();
+        console.log('✅ Primary source successful for Guess B0x staking data');
+
+        processGuessStakingData();
+
+    } catch (primaryError) {
+        console.warn('⚠️ Primary source failed for Guess B0x staking data:', primaryError.message);
+        console.log('🔄 Falling back to GitHub backup for Guess B0x staking data...');
+
+        try {
+            document.getElementById('tableContentGuessStaking').innerHTML = '<div class="loading55">Loading Guess B0x staking data from backup...</div>';
+
+            const backupResponse = await fetch(backupUrl);
+
+            if (!backupResponse.ok) {
+                throw new Error(`Backup source failed with status: ${backupResponse.status}`);
+            }
+
+            guessStakingData = await backupResponse.json();
+            console.log('✅ Backup source successful for Guess B0x staking data');
+
+            processGuessStakingData();
+
+            // Optional: Show user that backup data is being used
+            const tableHeader = document.querySelector('#tableContentGuessStaking');
+            if (tableHeader) {
+                const backupNotice = document.createElement('div');
+                backupNotice.className = 'backup-notice';
+                backupNotice.style.cssText = 'background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 8px; margin-bottom: 10px; border-radius: 4px; font-size: 12px;';
+                backupNotice.innerHTML = '⚠️ Using backup data source - some data may be slightly delayed';
+                tableHeader.insertBefore(backupNotice, tableHeader.firstChild);
+            }
+
+        } catch (backupError) {
+            console.error('❌ Both primary and backup sources failed for Guess B0x staking data!');
+            console.error('Primary error:', primaryError.message);
+            console.error('Backup error:', backupError.message);
+
+            document.getElementById('tableContentGuessStaking').innerHTML =
+                '<div class="error">Failed to load data from all sources. Please check your connection and try again.</div>';
+        }
+    }
+}
+
+/**
+ * Processes loaded Guess B0x staking data into stats + table
+ */
+function processGuessStakingData() {
+    updateStatsGuessStaking();
+
+    allGuessStakingData = Object.entries(guessStakingData.users)
+        .map(([address, data]) => ({ address, ...data }))
+        .filter(user => parseFloat(user.staking_balance) > 0);
+
+    filteredGuessStakingData = [...allGuessStakingData];
+
+    currentPageGuessStaking = 1;
+    renderTableGuessStaking();
+    renderPaginationGuessStaking();
+}
+
+/**
+ * Updates statistics for the Guess B0x staking rich list
+ */
+function updateStatsGuessStaking() {
+    const generatedAtEl = document.getElementById('guessStakeLastUpdated');
+    if (generatedAtEl) {
+        const generatedAt = new Date(guessStakingData.generated_at);
+        generatedAtEl.textContent = isNaN(generatedAt.getTime())
+            ? guessStakingData.generated_at
+            : generatedAt.toLocaleString();
+    }
+
+    document.getElementById('guessStakeTotalUsers').textContent = formatNumber(guessStakingData.user_count);
+
+    const poolBalance = parseFloat(guessStakingData.pool_balance) / 1e18;
+    document.getElementById('guessStakePoolBalance').textContent = poolBalance.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+/**
+ * Renders table for the Guess B0x staking rich list
+ */
+export function renderTableGuessStaking() {
+    const sortedData = [...filteredGuessStakingData].sort((a, b) => {
+        return parseFloat(b.withdrawable_b0x) - parseFloat(a.withdrawable_b0x);
+    });
+
+    const start = (currentPageGuessStaking - 1) * pageSizeGuessStaking;
+    const end = start + pageSizeGuessStaking;
+    const pageData = sortedData.slice(start, end);
+
+    let tableHTML = `
+        <style>
+            .address-link {
+                color: white !important;
+                text-decoration: none;
+            }
+            .address-link:visited,
+            .address-link:hover,
+            .address-link:active {
+                color: white !important;
+            }
+            .address-link:hover {
+                text-decoration: underline;
+            }
+        </style>
+        <table>
+            <thead>
+                <tr>
+                <th style="font-size: 1em; padding: 3px 4px;">Rank</th>
+                <th style="font-size: 3em; padding: 12px 16px;">Address</th>
+                <th style="font-size: 3em; padding: 12px 16px;">Withdrawable B0x</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    const globalStart = (currentPageGuessStaking - 1) * pageSizeGuessStaking;
+    pageData.forEach((user, index) => {
+        const rank = globalStart + index + 1;
+
+        const withdrawableB0x = parseFloat(user.withdrawable_b0x_formatted ?? (parseFloat(user.withdrawable_b0x) / 1e18));
+        const withdrawableFormatted = withdrawableB0x.toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: withdrawableB0x > 999.999 ? 0 : withdrawableB0x > 19.999 ? 1 : withdrawableB0x > 1.999 ? 2 : 6
+        });
+
+        tableHTML += `
+            <tr>
+                <td class="rank55">${rank}</td>
+                <td>
+                    <a href="https://basescan.org/address/${user.address}"
+                       target="_blank"
+                       class="address55 address-link"
+                       title="${user.address}">
+                        ${user.address}
+                    </a>
+                </td>
+                <td class="balance55">${withdrawableFormatted}</td>
+            </tr>
+        `;
+    });
+
+    tableHTML += '</tbody></table>';
+    document.getElementById('tableContentGuessStaking').innerHTML = tableHTML;
+}
+
+/**
+ * Renders pagination for the Guess B0x staking rich list
+ */
+export function renderPaginationGuessStaking() {
+    const totalPages = Math.ceil(filteredGuessStakingData.length / pageSizeGuessStaking);
+    const pagination = document.getElementById('paginationGuessStaking');
+
+    if (totalPages <= 1) {
+        pagination.style.display = 'none';
+        return;
+    }
+
+    pagination.style.display = 'flex';
+
+    let paginationHTML = `
+        <button onclick="changePageGuessStaking(${currentPageGuessStaking - 1})" ${currentPageGuessStaking === 1 ? 'disabled' : ''}>
+            Previous
+        </button>
+    `;
+
+    const startPage = Math.max(1, currentPageGuessStaking - 2);
+    const endPage = Math.min(totalPages, startPage + 4);
+
+    for (let i = startPage; i <= endPage; i++) {
+        paginationHTML += `
+            <button onclick="changePageGuessStaking(${i})" class="${i === currentPageGuessStaking ? 'active' : ''}">
+                ${i}
+            </button>
+        `;
+    }
+
+    paginationHTML += `
+        <button onclick="changePageGuessStaking(${currentPageGuessStaking + 1})" ${currentPageGuessStaking === totalPages ? 'disabled' : ''}>
+            Next
+        </button>
+        <span class="pagination55-info">
+            Showing ${(currentPageGuessStaking - 1) * pageSizeGuessStaking + 1}-${Math.min(currentPageGuessStaking * pageSizeGuessStaking, filteredGuessStakingData.length)}
+            of ${filteredGuessStakingData.length} users
+        </span>
+    `;
+
+    pagination.innerHTML = paginationHTML;
+}
+
+/**
+ * Changes page for Guess B0x staking rich list pagination
+ * @param {number} page - Page number to navigate to
+ */
+export function changePageGuessStaking(page) {
+    const totalPages = Math.ceil(filteredGuessStakingData.length / pageSizeGuessStaking);
+    if (page < 1 || page > totalPages) return;
+    currentPageGuessStaking = page;
+    renderTableGuessStaking();
+    renderPaginationGuessStaking();
+}
+
+/**
+ * Filters Guess B0x staking rich list data based on search input
+ */
+export function filterDataGuessStaking() {
+    const searchBox = document.getElementById('searchBoxGuessStaking');
+    const searchTerm = searchBox ? searchBox.value.toLowerCase() : '';
+
+    if (searchTerm === '' || allGuessStakingData.length === 0) {
+        filteredGuessStakingData = [...allGuessStakingData];
+    } else {
+        filteredGuessStakingData = allGuessStakingData.filter(user =>
+            user.address.toLowerCase().includes(searchTerm)
+        );
+    }
+
+    currentPageGuessStaking = 1;
+    renderTableGuessStaking();
+    renderPaginationGuessStaking();
 }
 
 /**
@@ -2612,6 +2866,23 @@ export function initRichListEventListeners() {
             currentPage = 1;
             renderTable2();
             renderPagination2();
+        });
+    }
+
+    // Guess B0x staking rich list - Search box event listener
+    const searchBoxGuessStaking = document.getElementById('searchBoxGuessStaking');
+    if (searchBoxGuessStaking) {
+        searchBoxGuessStaking.addEventListener('input', filterDataGuessStaking);
+    }
+
+    // Guess B0x staking rich list - Page size dropdown event listener
+    const pageSizeGuessStakingEl = document.getElementById('pageSizeGuessStaking');
+    if (pageSizeGuessStakingEl) {
+        pageSizeGuessStakingEl.addEventListener('change', function () {
+            pageSizeGuessStaking = parseInt(this.value);
+            currentPageGuessStaking = 1;
+            renderTableGuessStaking();
+            renderPaginationGuessStaking();
         });
     }
 
@@ -4455,11 +4726,18 @@ export default {
     // Rich List Data Loading
     loadData2,
     loadData,
+    loadDataGuessStaking,
 
     // Rich List Controls
     changePage,
     changePage2,
     filterData,
     filterData2,
-    initRichListEventListeners
+    initRichListEventListeners,
+
+    // Guess B0x Staking Rich List
+    renderTableGuessStaking,
+    renderPaginationGuessStaking,
+    changePageGuessStaking,
+    filterDataGuessStaking
 };

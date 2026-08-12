@@ -301,6 +301,11 @@ window.changePage2 = UI.changePage2;
 window.filterData = UI.filterData;
 window.filterData2 = UI.filterData2;
 window.initRichListEventListeners = UI.initRichListEventListeners;
+window.loadDataGuessStaking = UI.loadDataGuessStaking;
+window.renderTableGuessStaking = UI.renderTableGuessStaking;
+window.renderPaginationGuessStaking = UI.renderPaginationGuessStaking;
+window.changePageGuessStaking = UI.changePageGuessStaking;
+window.filterDataGuessStaking = UI.filterDataGuessStaking;
 window.known_miners = MinerInfo.known_miners;
 
 // Whitepaper page functions

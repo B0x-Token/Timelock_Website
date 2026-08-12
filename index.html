@@ -259,6 +259,8 @@
                             Rich List</button>
                         <button class="nav-tab2" data-tab="stats-staking-rich-list"
                             onclick="switchTab2('stats-staking-rich-list')">Staking Rich List</button>
+                        <button class="nav-tab2" data-tab="stats-guess-staking-rich-list"
+                            onclick="switchTab2('stats-guess-staking-rich-list')">Guess B0x Staking</button>
                     </nav>
 
 
@@ -762,6 +764,49 @@
                             </div>
 
                             <div class="pagination55" id="pagination55" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <div id="stats-guess-staking-rich-list" class="stats-page">
+
+                        <div class="header55">
+                            <h1>Guess B0x Staking Dashboard</h1>
+                            <p>Real-time withdrawable B0x balances for the Guess B0x staking pool</p>
+                        </div>
+
+                        <div class="stats55">
+                            <div class="stat-card55">
+                                <div class="stat-value55" id="guessStakeLastUpdated">-</div>
+                                <div class="stat-label55">Last Updated (Your Local Time)</div>
+                            </div>
+                            <div class="stat-card55">
+                                <div class="stat-value55" id="guessStakeTotalUsers">-</div>
+                                <div class="stat-label55">Total Users</div>
+                            </div>
+                            <div class="stat-card55">
+                                <div class="stat-value55" id="guessStakePoolBalance">-</div>
+                                <div class="stat-label55">Pool B0x Balance</div>
+                            </div>
+                        </div>
+
+                        <div class="table-container55">
+                            <div class="controls55">
+                                <input type="text" class="search-box" id="searchBoxGuessStaking"
+                                    placeholder="Search by address...">
+                                <select class="page-size-selector" id="pageSizeGuessStaking">
+                                    <option value="10">10 per page</option>
+                                    <option value="25" selected>25 per page</option>
+                                    <option value="50">50 per page</option>
+                                    <option value="100">100 per page</option>
+                                </select>
+                                <button class="refresh-btn" onclick="loadDataGuessStaking()">Refresh Data</button>
+                            </div>
+
+                            <div id="tableContentGuessStaking">
+                                <div class="loading55">Loading Guess B0x staking data...</div>
+                            </div>
+
+                            <div class="pagination55" id="paginationGuessStaking" style="display: none;"></div>
                         </div>
                     </div>
 
