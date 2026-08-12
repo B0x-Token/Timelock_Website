@@ -2459,6 +2459,18 @@ export function renderTableGuessStaking() {
             maximumFractionDigits: withdrawableB0x > 999.999 ? 0 : withdrawableB0x > 19.999 ? 1 : withdrawableB0x > 1.999 ? 2 : 6
         });
 
+        // unlock_time_iso (preferred) or unlock_time (unix seconds) tells us when the lock releases
+        const unlockMs = user.unlock_time_iso
+            ? Date.parse(user.unlock_time_iso)
+            : (user.unlock_time ? parseInt(user.unlock_time, 10) * 1000 : NaN);
+        let unlockHTML = '';
+        if (!isNaN(unlockMs)) {
+            const unlockDateStr = new Date(unlockMs).toLocaleDateString('en-US');
+            unlockHTML = unlockMs <= Date.now()
+                ? `<br><span style="font-size:0.75em;color:#4caf50">Unlocked @ ${unlockDateStr}</span>`
+                : `<br><span style="font-size:0.75em;color:#fff">Locked: Unlocks @ ${unlockDateStr}</span>`;
+        }
+
         tableHTML += `
             <tr>
                 <td class="rank55">${rank}</td>
@@ -2469,6 +2481,16 @@ export function renderTableGuessStaking() {
                        title="${user.address}">
                         ${user.address}
                     </a>
+                    ${user.owner ? `
+                    <br>
+                    <a href="https://basescan.org/address/${user.owner}"
+                       target="_blank"
+                       class="address-link"
+                       title="${user.owner}"
+                       style="font-size:0.75em">
+                        Owned By: ${user.owner}
+                    </a>` : ''}
+                    ${unlockHTML}
                 </td>
                 <td class="balance55">${withdrawableFormatted}</td>
             </tr>
@@ -2652,6 +2674,8 @@ function combineData() {
         addressMap.set(holder.address, {
             address: holder.address,
             owner: holder.owner || null,
+            unlock_time: holder.unlock_time ?? null,
+            unlock_time_iso: holder.unlock_time_iso ?? null,
             b0xBalance: parseFloat(holder.balanceFormatted) || 0,
             b0xBalanceRaw: holder.balance,
             ethB0xBalance: 0,
@@ -2666,10 +2690,16 @@ function combineData() {
             existing.ethB0xBalance = parseFloat(holder.balanceFormatted) || 0;
             existing.ethB0xBalanceRaw = holder.balance;
             if (!existing.owner && holder.owner) existing.owner = holder.owner;
+            if (!existing.unlock_time_iso && holder.unlock_time_iso) {
+                existing.unlock_time = holder.unlock_time ?? null;
+                existing.unlock_time_iso = holder.unlock_time_iso ?? null;
+            }
         } else {
             addressMap.set(holder.address, {
                 address: holder.address,
                 owner: holder.owner || null,
+                unlock_time: holder.unlock_time ?? null,
+                unlock_time_iso: holder.unlock_time_iso ?? null,
                 b0xBalance: 0,
                 b0xBalanceRaw: '0',
                 ethB0xBalance: parseFloat(holder.balanceFormatted) || 0,
@@ -3287,6 +3317,18 @@ export function renderTable2() {
             });
         }
 
+        // unlock_time_iso (preferred) or unlock_time (unix seconds) tells us when the lock releases
+        const unlockMs = user.unlock_time_iso
+            ? Date.parse(user.unlock_time_iso)
+            : (user.unlock_time ? parseInt(user.unlock_time, 10) * 1000 : NaN);
+        let unlockHTML = '';
+        if (!isNaN(unlockMs)) {
+            const unlockDateStr = new Date(unlockMs).toLocaleDateString('en-US');
+            unlockHTML = unlockMs <= Date.now()
+                ? `<br><span style="font-size:0.75em;color:#4caf50">Unlocked @ ${unlockDateStr}</span>`
+                : `<br><span style="font-size:0.75em;color:#fff">Locked: Unlocks @ ${unlockDateStr}</span>`;
+        }
+
         tableHTML += `
             <tr>
                 <td class="rank55">${rank}</td>
@@ -3306,6 +3348,7 @@ export function renderTable2() {
                        style="font-size:0.75em">
                         Owned By: ${user.owner}
                     </a>` : ''}
+                    ${unlockHTML}
                 </td>
                 <td class="balance55">${b0xStakedFormatted}</td>
                 <td class="balance55">${btcStakedFormatted}</td>
@@ -3402,6 +3445,19 @@ export function renderTable() {
             rank = holder.rankETHb0x;
         }
         const showOwner = holder.owner && !OWNER_DISPLAY_EXCLUDED_ADDRESSES.includes(holder.address.toLowerCase());
+
+        // unlock_time_iso (preferred) or unlock_time (unix seconds) tells us when the lock releases
+        const unlockMs = holder.unlock_time_iso
+            ? Date.parse(holder.unlock_time_iso)
+            : (holder.unlock_time ? parseInt(holder.unlock_time, 10) * 1000 : NaN);
+        let unlockHTML = '';
+        if (!isNaN(unlockMs)) {
+            const unlockDateStr = new Date(unlockMs).toLocaleDateString('en-US');
+            unlockHTML = unlockMs <= Date.now()
+                ? `<br><span style="font-size:0.75em;color:#4caf50">Unlocked @ ${unlockDateStr}</span>`
+                : `<br><span style="font-size:0.75em;color:#fff">Locked: Unlocks @ ${unlockDateStr}</span>`;
+        }
+
         tableHTML += `
             <tr>
                 <td class="spot-rich">${rank}</td>
@@ -3416,6 +3472,7 @@ export function renderTable() {
                        style="font-size:0.75em">
                         Owned By: ${holder.owner}
                     </a>` : ''}
+                    ${unlockHTML}
                 </td>
                 <td class="balance-rich">${holder.b0xBalance.toLocaleString(undefined, { maximumFractionDigits: maxDecimals })}</td>
                 <td class="balance-rich">${holder.ethB0xBalance.toLocaleString(undefined, { maximumFractionDigits: maxDecimals })}</td>
