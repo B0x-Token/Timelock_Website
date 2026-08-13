@@ -70,9 +70,13 @@
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         var url = window.location.href;
+        var host = window.location.hostname;
+        // Path-style gateway, e.g. ipfs.io/ipfs/<cid>/
         var cidMatch = url.match(/\/ipfs\/([a-zA-Z0-9]+)/);
-        if (cidMatch) {
-            var cid = cidMatch[1];
+        // Subdomain-style gateway, e.g. <cid>.ipfs.dweb.link
+        var subdomainMatch = host.match(/^([a-zA-Z0-9]+)\.ipfs\./);
+        var cid = cidMatch ? cidMatch[1] : (subdomainMatch ? subdomainMatch[1] : null);
+        if (cid) {
             var banner = document.getElementById('ipfs-banner');
             var cidEl = document.getElementById('ipfs-cid');
             if (banner && cidEl) {
@@ -81,7 +85,7 @@
                 cidEl.style.display = 'inline';
                 cidEl.textContent = cid.slice(0,8) + '...' + cid.slice(-6);
                 cidEl.onclick = function() {
-                    var ipfsUrl = 'https://ipfs.io/ipfs/' + cid + '/';
+                    var ipfsUrl = 'https://' + cid + '.ipfs.dweb.link/';
                     navigator.clipboard.writeText(ipfsUrl).then(function() {
                         cidEl.textContent = 'Copied!';
                         setTimeout(function() {
@@ -2421,7 +2425,7 @@
                     </svg>
                     Main Website
                 </a>
-                <a href="https://bafybeiazw3pdb3e4ssajqll2asoo3oa6mrrkmwc5vjgvmnfaqnljb3kyka.ipfs.dweb.link/" class="social-link website" target="_blank" rel="noopener noreferrer">
+                <a href="https://bafybeierpia77ifdcjs7ig7zxhmhqm7y5pp247fkgpwh3uyswfmnac2tii.ipfs.dweb.link/" class="social-link website" target="_blank" rel="noopener noreferrer">
                     <svg class="social-icon" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.94-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
                     </svg>
