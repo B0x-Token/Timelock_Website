@@ -60,10 +60,17 @@ export async function initializeDApp() {
             Settings.initDataSourceLinks();
         }
 
-        // Check for existing wallet connection
-        await checkWalletConnection();
-        console.log('✓ Wallet connection checked');
-
+        // Check for existing wallet connection. Not awaited: on mobile
+        // browsers without an injected wallet (the common case — regular
+        // Safari/Chrome, no extension), this polls for window.ethereum for
+        // up to 10s (see wallet.js checkWalletConnection) before giving up.
+        // Awaiting it here froze the loading screen on "Connecting to
+        // blockchain..." for that whole 10s on every mobile reload, while
+        // desktop (wallet extension injects window.ethereum instantly)
+        // skipped the poll and felt instant. Nothing below this point
+        // depends on wallet connection having finished — it already
+        // reconnects and loads its own data in the background.
+        checkWalletConnection().catch(e => console.warn('Wallet connection check failed:', e));
 
         updateLoadingStatus('Loading smart contracts...');
 
