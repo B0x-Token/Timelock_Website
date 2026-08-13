@@ -2302,10 +2302,12 @@ export async function loadData2() {
  */
 function updateStats55() {
     document.getElementById('lastBlock').textContent = stakingData.last_block;
-    document.getElementById('totalUsers').textContent = formatNumber(stakingData.user_addresses.length);
 
     // Calculate totals
     const users = Object.values(stakingData.users);
+    const usersWithBalance = users.filter(user => Number(user.B0xStaked) > 0 || Number(user['0xBTCStaked']) > 0);
+    document.getElementById('totalUsers').textContent = formatNumber(usersWithBalance.length);
+
     const totalB0xStaked = users.reduce((sum, user) => sum + user.B0xStaked, 0);
     const total0xBTCStaked = users.reduce((sum, user) => sum + user['0xBTCStaked'], 0);
 
@@ -2568,7 +2570,8 @@ export function filterDataGuessStaking() {
         filteredGuessStakingData = [...allGuessStakingData];
     } else {
         filteredGuessStakingData = allGuessStakingData.filter(user =>
-            user.address.toLowerCase().includes(searchTerm)
+            user.address.toLowerCase().includes(searchTerm) ||
+            (user.owner && user.owner.toLowerCase().includes(searchTerm))
         );
     }
 

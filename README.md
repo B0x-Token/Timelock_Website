@@ -10,7 +10,7 @@
 [![Ethereum](https://img.shields.io/badge/Ethereum-Mainnet-3C3C3D?logo=ethereum)](https://ethereum.org)
 [![Base](https://img.shields.io/badge/Base-Mainnet-0052FF?logo=coinbase)](https://base.org)
 
-[Live Site using this Github](https://b0x-token.github.io/B0x-Website/) | [IPFS Version](https://bafybeiazw3pdb3e4ssajqll2asoo3oa6mrrkmwc5vjgvmnfaqnljb3kyka.ipfs.dweb.link/)
+[Live Site using this Github](https://b0x-token.github.io/B0x-Website/) | [IPFS Version](https://bafybeigqyoujeekkppzcyry6cnho4fii3gniultsjzmaafqrho4sxkp3bi.ipfs.inbrowser.link/)
 
 </div>
 
@@ -21,9 +21,9 @@
 - **Token Swaps** - Seamlessly swap tokens on Ethereum and Base networks
 - **Uniswap V4 Positions** - Create and manage B0x liquidity positions
 - **Staking** - Stake your Uniswap V4 positions to earn rewards alongside B0x miners
+- **Guess** - Play a Guess Game and win/lose B0x or become the house
 - **Multi-Chain Support** - Works on both Ethereum Mainnet and Base
 - **IPFS Compatible** - Fully decentralized hosting support with content verification
-- **100% Decentralized** - No backend servers, runs entirely in your browser
 
 ---
 
