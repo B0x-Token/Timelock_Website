@@ -1393,7 +1393,7 @@ function renderVaultCards(container) {
         html += `
         <div class="timelock-vault-card ${selectedVaultAddress === vault.address ? 'selected' : ''}">
             <div class="timelock-vault-header">
-                <a class="timelock-vault-addr" href="https://basescan.org/address/${vault.address}#readContract#F10" target="_blank" rel="noopener noreferrer" title="${vault.address}" style="color:inherit;text-decoration:underline dotted">${shortAddr}</a>
+                <a class="timelock-vault-addr" href="https://basescan.org/address/${vault.address}#readContract#F14" target="_blank" rel="noopener noreferrer" title="${vault.address}" style="color:inherit;text-decoration:underline dotted">${shortAddr}</a>
                 ${lockLabel}
             </div>
             <div class="timelock-vault-detail">Unlocks: ${formatUnlockTime(vault.unlockTime)}</div>
@@ -1441,7 +1441,7 @@ export async function selectVault(vaultAddress) {
     if (panel) panel.style.display = 'block';
 
     const addrEl = document.getElementById('timelock-selected-vault-addr');
-    if (addrEl) addrEl.innerHTML = `<a href="https://basescan.org/address/${vaultAddress}#readContract#10" target="_blank" rel="noopener noreferrer" style="color:#aaa;text-decoration:underline dotted">${vaultAddress}</a>`;
+    if (addrEl) addrEl.innerHTML = `<a href="https://basescan.org/address/${vaultAddress}#readContract#14" target="_blank" rel="noopener noreferrer" style="color:#aaa;text-decoration:underline dotted">${vaultAddress}</a>`;
 
     await refreshVaultStatus(vaultAddress);
     await populateNFTSelectors(vaultAddress);
@@ -2090,7 +2090,7 @@ async function updateExitAllSectionVisibility(vaultAddress, timelockStakedCount)
     } else {
         // Reset so a leftover value from a previous (mismatched) vault isn't
         // silently used if the section becomes visible again later.
-        if (startInput) startInput.value = '0';
+        if (startInput) startInput.value = '1';
     }
 }
 
@@ -2639,8 +2639,20 @@ export async function getVaultRewardsForTokens() {
 // ============================================
 
 /**
- * Calls exitAllTogether(startIndex, count) on the vault.
- * Collects all rewards and exits LP positions.
+ * The vault's on-chain exitAllTogether(startIndex, count) reverts (it
+ * delegates to LP_POOL.exit(startIndex, count), which errors). This replaces
+ * that call with a client-side equivalent: read the vault's staked positions
+ * directly out of the LP pool's public `userPositions(vault, id)` mapping —
+ * from `startIndex` up to `startIndex + count - 1` — collect the tokenId of
+ * each position still marked `isStaked`, then withdraw them all in one shot
+ * via the vault's working withdraw_Multiple_NFTs_And_ERC20s (which unstakes
+ * NFTs individually rather than through the broken LP_POOL.exit path), also
+ * sweeping B0x / 0xBTC / WETH rewards in the same transaction.
+ *
+ * The per-index userPositions reads are batched into a single Multicall3
+ * aggregate3 call, and the range is clamped against the pool's own
+ * userPositionCount(vault) so it never queries past this vault's actual
+ * position count.
  */
 export async function exitAllFromVault() {
     setButtonToastAnchor('timelockExitAllBtn');
@@ -2653,15 +2665,62 @@ export async function exitAllFromVault() {
 
     const startInput = document.getElementById('timelock-exit-start');
     const countInput = document.getElementById('timelock-exit-count');
-    const startIndex = parseInt(startInput?.value || '0', 10);
+    const startIndex = parseInt(startInput?.value || '1', 10);
     const count = parseInt(countInput?.value || '25', 10);
 
     disableBtn('timelockExitAllBtn');
 
     try {
+        const readProvider = await getTimelockProvider();
+        const lpPoolInterface = new ethers.utils.Interface(LP_POOL_MINIMAL_ABI);
+        const multicallContract = new ethers.Contract(MULTICALL_ADDRESS, MULTICALL3_ABI, readProvider);
+
+        // Note: userPositionCount(vault) is NOT used to clamp this range — it's
+        // read from the same LP pool contract this workaround exists to route
+        // around, and has been observed under-reporting the true number of
+        // staked positions. Reading a mapping slot past the "real" count just
+        // returns a zero-valued/isStaked:false struct (mapping getters never
+        // revert), so it's safe — and necessary — to always query the vault's
+        // full requested [startIndex, startIndex + count) range instead.
+        const endIndex = startIndex + count;
+        // Position IDs are 1-indexed — slot 0 is never used, so skip it
+        // regardless of what startIndex was passed in.
+        const queryStart = Math.max(startIndex, 1);
+
+        showButtonToast('info', 'Reading Positions', `Reading LP pool positions ${queryStart}-${endIndex - 1}...`);
+        const calls = [];
+        for (let i = queryStart; i < endIndex; i++) {
+            calls.push({
+                target: contractAddressLPRewardsStaking,
+                allowFailure: true,
+                callData: lpPoolInterface.encodeFunctionData('userPositions', [selectedVaultAddress, i])
+            });
+        }
+        const results = await withRpcRetry(
+            () => multicallContract.aggregate3(calls),
+            `multicall userPositions [${queryStart}, ${endIndex})`
+        );
+        const tokenIds = [];
+        for (const res of results) {
+            if (!res.success) continue;
+            const pos = lpPoolInterface.decodeFunctionResult('userPositions', res.returnData);
+            if (pos.isStaked) tokenIds.push(pos.tokenId);
+        }
+
+        if (tokenIds.length === 0) {
+            showButtonToast('info', 'Nothing To Exit', `No staked positions found in range ${queryStart}-${endIndex - 1}.`);
+            return;
+        }
+
+        const ERC20sToGetRewardsAndWithdraw = [
+            tokenAddresses['B0x'],
+            tokenAddresses['0xBTC'],
+            tokenAddresses['WETH']
+        ];
+
         const vaultContract = new ethers.Contract(selectedVaultAddress, TIMELOCK_VAULT_ABI, window.signer);
-        showButtonToast('info', 'Exiting All', `Calling exitAllTogether(${startIndex}, ${count}). Confirm in wallet.`);
-        const tx = await vaultContract.exitAllTogether(startIndex, count, []);
+        showButtonToast('info', 'Exiting All', `Withdrawing ${tokenIds.length} NFT(s) (${tokenIds.map(id => `#${id}`).join(', ')}) and claiming rewards. Confirm in wallet.`);
+        const tx = await vaultContract.withdraw_Multiple_NFTs_And_ERC20s(tokenIds, ERC20sToGetRewardsAndWithdraw);
         await tx.wait();
         showButtonToast('success', 'Exit Complete!', 'All rewards collected and LP positions exited.');
         await loadUserVaults();
@@ -2669,7 +2728,7 @@ export async function exitAllFromVault() {
         await loadVaultTokenBalances(selectedVaultAddress);
     } catch (err) {
         console.error('exitAllFromVault error:', err);
-        showButtonToast('error', 'Failed', err.reason || err.message || 'Exit failed.');
+        showButtonToast('error', 'Failed', decodeVaultError(err));
     } finally {
         enableBtn('timelockExitAllBtn');
     }
@@ -3635,7 +3694,30 @@ const ERC20_MINIMAL_ABI = [
 // Minimal read-only fragment of the external LP staking pool (contractAddressLPRewardsStaking),
 // used to preview outstanding rewards before calling stakeVaultMaxAndRewards.
 const LP_POOL_MINIMAL_ABI = [
-    { "inputs": [{ "internalType": "address", "name": "user", "type": "address" }, { "internalType": "address[]", "name": "rewardTokens", "type": "address[]" }], "name": "getRewardForTokensOwed", "outputs": [{ "internalType": "uint256[]", "name": "rewardsOwed", "type": "uint256[]" }], "stateMutability": "view", "type": "function" }
+    { "inputs": [{ "internalType": "address", "name": "user", "type": "address" }, { "internalType": "address[]", "name": "rewardTokens", "type": "address[]" }], "name": "getRewardForTokensOwed", "outputs": [{ "internalType": "uint256[]", "name": "rewardsOwed", "type": "uint256[]" }], "stateMutability": "view", "type": "function" },
+    {
+        "inputs": [
+            { "internalType": "address", "name": "", "type": "address" },
+            { "internalType": "uint256", "name": "", "type": "uint256" }
+        ],
+        "name": "userPositions",
+        "outputs": [
+            { "internalType": "uint256", "name": "tokenId", "type": "uint256" },
+            { "internalType": "uint128", "name": "liquidity", "type": "uint128" },
+            { "internalType": "bool", "name": "isStaked", "type": "bool" },
+            { "internalType": "uint256", "name": "timeStakedAt", "type": "uint256" },
+            { "internalType": "address", "name": "ownerOfPosition", "type": "address" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+        "name": "userPositionCount",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    }
 ];
 
 // Tokens shown in the deposit dropdown

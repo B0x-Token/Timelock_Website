@@ -192,7 +192,14 @@ let _anchoredToastTimer = null;
 // Track the last clicked non-nav button as a general fallback only
 document.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
-    if (btn && !btn.classList.contains('nav-tab')) _lastClickedBtn = btn;
+    // Exclude nav tabs and the dialog's own buttons (e.g. "OK, Got It") — those
+    // get removed from the DOM right after being clicked, so if we captured
+    // them here a *subsequent* dialog would try to anchor off a detached
+    // element (getBoundingClientRect() on it returns all zeros, landing the
+    // dialog top-left instead of near the real action button).
+    if (btn && !btn.classList.contains('nav-tab') && !btn.classList.contains('ui-dialog-btn')) {
+        _lastClickedBtn = btn;
+    }
 }, true);
 
 /**
@@ -421,6 +428,7 @@ export function showAlertDialog(message, title = 'Notice') {
 
         const btn = document.createElement('button');
         btn.textContent = 'OK, Got It';
+        btn.className = 'ui-dialog-btn';
         btn.style.cssText = _dialogBtnStyle(true) + ';width:100%';
         box.appendChild(btn);
 
@@ -450,10 +458,12 @@ export function showConfirmDialog(message, title = 'Please Confirm') {
 
         const cancelBtn = document.createElement('button');
         cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'ui-dialog-btn';
         cancelBtn.style.cssText = _dialogBtnStyle(false);
 
         const confirmBtn = document.createElement('button');
         confirmBtn.textContent = 'Confirm';
+        confirmBtn.className = 'ui-dialog-btn';
         confirmBtn.style.cssText = _dialogBtnStyle(true);
 
         btnRow.appendChild(cancelBtn);
