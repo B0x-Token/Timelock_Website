@@ -2511,6 +2511,8 @@ export function renderTableGuessStaking() {
 
     tableHTML += '</tbody></table>';
     document.getElementById('tableContentGuessStaking').innerHTML = tableHTML;
+
+    adjustTableForScreenSize();
 }
 
 /**
@@ -2945,8 +2947,9 @@ function adjustTableForScreenSize() {
 
     const activeTab2 = activeTab.getAttribute('data-tab');
 
-    if (activeTab2 == 'stats-staking-rich-list') {
-        const table = document.querySelector('#tableContent55 table');
+    if (activeTab2 == 'stats-staking-rich-list' || activeTab2 == 'stats-guess-staking-rich-list') {
+        const containerId = activeTab2 == 'stats-staking-rich-list' ? 'tableContent55' : 'tableContentGuessStaking';
+        const table = document.querySelector(`#${containerId} table`);
         if (!table) return;
 
         const screenWidth = window.innerWidth;
